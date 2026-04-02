@@ -1,0 +1,53 @@
+# replica-sync 設定ファイル
+# cp config/sync.conf.example config/sync.conf して編集する
+# sync.conf は .gitignore 済み
+
+# ── 社内リポジトリ (GHE) ──────────────────────────────────────
+
+# 社内 monorepo のローカルパス（絶対パス）
+INTERNAL_REPO="/path/to/internal-monorepo"
+
+# GHE の remote 名
+INTERNAL_REMOTE="origin"
+
+# GHE のホスト名（gh CLI の GH_HOST に使用）
+GH_HOST="github.your-company.com"
+
+# GHE の Organization / Repo
+GH_ORG="org"
+GH_REPO="internal"
+
+# ── レプリカリポジトリ (github.com) ──────────────────────────
+
+# レプリカのローカルパス（絶対パス）
+REPLICA_REPO="/path/to/replica"
+
+# レプリカの remote 名
+REPLICA_REMOTE="origin"
+
+# レプリカの同期先ブランチ
+REPLICA_BRANCH="main"
+
+# github.com の Organization/Repo（gh pr create に使用）
+REPLICA_GH_REPO="your-org/replica"
+
+# ── 同期設定 ─────────────────────────────────────────────────
+
+# 同期起点を記録するタグ名（変更不要）
+SYNC_TAG="replica/last-sync"
+
+# squash コミットの author 情報
+SYNC_AUTHOR_NAME="Platform Sync Bot"
+SYNC_AUTHOR_EMAIL="sync-bot@your-company.com"
+
+# レプリカへの同期から除外するパス（内部専用サービスなど）
+EXCLUDE_PATHS=(
+  "services/internal-only/"
+  ".internal/"
+  "scripts/internal/"
+)
+
+# ── patch モード設定 ──────────────────────────────────────────
+
+# patch モードで生成したファイルの出力先ディレクトリ
+PATCH_OUTPUT_DIR="./sync-patches"

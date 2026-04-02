@@ -1,0 +1,63 @@
+name: Sync to Replica
+
+# GHE 側の GitHub Actions。
+# milestone/* タグ（例: milestone/2024-Q1）の push をトリガーに
+# sync-to-replica.sh を自動実行する。
+#
+# Secrets に以下を登録すること:
+#   GHE_TOKEN          : GHE の Personal Access Token（タグ push 権限）
+#   GITHUB_COM_DEPLOY_KEY : github.com レプリカへの write 権限を持つ SSH Deploy Key
+
+on:
+  push:
+    tags:
+      - 'milestone/*'   # milestone/2024-Q1 のようなタグをトリガーに
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout internal monorepo
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0    # タグ・全履歴が必要
+          token: ${{ secrets.GHE_TOKEN }}
+
+      - name: Setup github.com SSH Deploy Key
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.GITHUB_COM_DEPLOY_KEY }}" \
+            > ~/.ssh/id_ed25519_github
+          chmod 600 ~/.ssh/id_ed25519_github
+          cat >> ~/.ssh/config << 'EOF'
+          Host github.com
+            HostName github.com
+            User git
+            IdentityFile ~/.ssh/id_ed25519_github
+            StrictHostKeyChecking no
+          EOF
+
+      - name: Clone replica
+        run: |
+          git clone git@github.com:${{ vars.REPLICA_GH_REPO }}.git /tmp/replica
+
+      - name: Setup config
+        run: |
+          cp config/sync.conf.example config/sync.conf
+          sed -i "s|/path/to/internal-monorepo|$GITHUB_WORKSPACE|g" config/sync.conf
+          sed -i "s|/path/to/replica|/tmp/replica|g" config/sync.conf
+          sed -i "s|your-org/replica|${{ vars.REPLICA_GH_REPO }}|g" config/sync.conf
+          sed -i "s|github.your-company.com|${{ vars.GH_HOST }}|g" config/sync.conf
+          sed -i "s|^GH_ORG=.*|GH_ORG=\"${{ vars.GH_ORG }}\"|g" config/sync.conf
+          sed -i "s|^GH_REPO=.*|GH_REPO=\"${{ vars.GH_REPO }}\"|g" config/sync.conf
+
+      - name: Make scripts executable
+        run: chmod +x scripts/*.sh
+
+      - name: Run sync (PR mode)
+        run: |
+          ./scripts/sync-to-replica.sh \
+            --mode pr \
+            "sync: ${{ github.ref_name }}"
+        env:
+          GH_TOKEN: ${{ secrets.GH_TOKEN }}

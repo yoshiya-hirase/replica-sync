@@ -1,0 +1,10 @@
+# 設定ファイル（パス・認証情報を含むため）
+config/sync.conf
+
+# 生成されたパッチセット
+sync-patches/
+
+# 一時ファイル
+/tmp/
+*.patch
+*.tmp
