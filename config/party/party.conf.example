@@ -1,0 +1,21 @@
+# Per-party replica configuration
+# Copy to config/party/<party>.conf and edit for each 3rd party.
+# These files are listed in .gitignore (contain repo paths and credentials).
+#
+# Usage:
+#   cp config/party/party.conf.example config/party/acme.conf
+#   $EDITOR config/party/acme.conf
+
+# ── Replica repository (github.com) ──────────────────────────
+
+# Local path to the replica repository clone (absolute path)
+REPLICA_REPO="/path/to/replica-acme"
+
+# Remote name in the replica repository
+REPLICA_REMOTE="origin"
+
+# Branch on the replica that receives synced content
+REPLICA_BRANCH="main"
+
+# github.com Organization/Repo slug (used by gh CLI)
+REPLICA_GH_REPO="your-org/replica-acme"

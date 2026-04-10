@@ -68,6 +68,12 @@ case "$MODE" in
   *) die "--mode must be pr or direct" ;;
 esac
 
+# Load per-party config (provides REPLICA_REPO, REPLICA_REMOTE, REPLICA_BRANCH, REPLICA_GH_REPO)
+PARTY_CONFIG="${SCRIPT_DIR}/../config/party/${PARTY}.conf"
+[[ -f "$PARTY_CONFIG" ]] || die "Party config not found: $PARTY_CONFIG\n  Run: cp config/party/party.conf.example config/party/${PARTY}.conf and edit it"
+# shellcheck source=../config/party/party.conf.example
+source "$PARTY_CONFIG"
+
 # Party-scoped sync tag
 PARTY_SYNC_TAG="replica/${PARTY}/last-sync"
 

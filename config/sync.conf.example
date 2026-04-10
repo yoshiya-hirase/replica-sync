@@ -1,55 +1,41 @@
-# replica-sync 設定ファイル
-# cp config/sync.conf.example config/sync.conf して編集する
-# sync.conf は .gitignore 済み
+# replica-sync configuration file
+# Copy to config/sync.conf and edit for your environment.
+# sync.conf is listed in .gitignore (may contain sensitive paths).
 
-# ── 社内リポジトリ (GHE) ──────────────────────────────────────
+# ── Internal repository (GHE) ────────────────────────────────
 
-# 社内 monorepo のローカルパス（絶対パス）
+# Local path to the internal monorepo (absolute path)
 INTERNAL_REPO="/path/to/internal-monorepo"
 
-# GHE の remote 名
+# Remote name on GHE
 INTERNAL_REMOTE="origin"
 
-# GHE のホスト名（gh CLI の GH_HOST に使用）
+# GHE hostname (used as GH_HOST for the gh CLI)
 GH_HOST="github.your-company.com"
 
-# GHE の Organization / Repo
+# GHE Organization / Repo
 GH_ORG="org"
 GH_REPO="internal"
 
-# ── レプリカリポジトリ (github.com) ──────────────────────────
+# ── Sync settings ─────────────────────────────────────────────
 
-# レプリカのローカルパス（絶対パス）
-REPLICA_REPO="/path/to/replica"
-
-# レプリカの remote 名
-REPLICA_REMOTE="origin"
-
-# レプリカの同期先ブランチ
-REPLICA_BRANCH="main"
-
-# github.com の Organization/Repo（gh pr create に使用）
-REPLICA_GH_REPO="your-org/replica"
-
-# ── 同期設定 ─────────────────────────────────────────────────
-
-# publish ブランチのプレフィックス
-# publish ブランチ名は <prefix>/<party>（例: publish/acme）になる
-# 未設定時のデフォルト: publish
-PUBLISH_BRANCH_PREFIX="publish"
-
-# squash コミットの author 情報
+# Squash commit author identity (replaces internal developer info)
 SYNC_AUTHOR_NAME="Platform Sync Bot"
 SYNC_AUTHOR_EMAIL="sync-bot@your-company.com"
 
-# レプリカへの同期から除外するパス（内部専用サービスなど）
+# Paths excluded from replica sync (internal-only services, etc.)
 EXCLUDE_PATHS=(
   "services/internal-only/"
   ".internal/"
   "scripts/internal/"
 )
 
-# ── patch モード設定 ──────────────────────────────────────────
+# ── Patch mode settings ───────────────────────────────────────
 
-# patch モードで生成したファイルの出力先ディレクトリ
+# Output directory for patch sets generated in patch mode
 PATCH_OUTPUT_DIR="./sync-patches"
+
+# ── Per-party replica settings ────────────────────────────────
+# Replica-specific settings (REPLICA_REPO, REPLICA_REMOTE, REPLICA_BRANCH,
+# REPLICA_GH_REPO) are defined per party in config/party/<party>.conf.
+# Copy config/party/party.conf.example to config/party/<party>.conf and edit it.

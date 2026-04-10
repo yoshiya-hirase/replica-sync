@@ -2,8 +2,11 @@
 # deliver-to-replica.sh
 #
 # Milestone sync - Phase 2.
-# Delivers the publish/<party> branch content to the external replica.
-# Run after: stage-publish.sh -> GHE PR review -> merge.
+# Delivers the publish branch content to the external replica for the given party.
+# Run after: init-replica.sh or stage-publish.sh -> GHE PR review -> merge.
+#
+# On first delivery (no last-sync tag yet), delivers from the beginning of the
+# publish branch and also sets the replica/<party>/init-TIMESTAMP tag.
 #
 # Usage:
 #   # Push as a PR (default)
@@ -31,7 +34,6 @@ CONFIG_FILE="${SCRIPT_DIR}/../config/sync.conf"
 source "$CONFIG_FILE"
 
 # Defaults for optional config values (prevents -u errors when unset)
-: "${PUBLISH_BRANCH_PREFIX:=publish}"
 : "${PATCH_OUTPUT_DIR:=./sync-patches}"
 
 log() { echo -e "\033[1;34m[deliver]\033[0m $*"; }
@@ -67,7 +69,13 @@ case "$MODE" in
   *) die "--mode must be pr or direct" ;;
 esac
 
-PUBLISH_BRANCH="${PUBLISH_BRANCH_PREFIX}/${PARTY}"
+# Load per-party config (provides REPLICA_REPO, REPLICA_REMOTE, REPLICA_BRANCH, REPLICA_GH_REPO)
+PARTY_CONFIG="${SCRIPT_DIR}/../config/party/${PARTY}.conf"
+[[ -f "$PARTY_CONFIG" ]] || die "Party config not found: $PARTY_CONFIG\n  Run: cp config/party/party.conf.example config/party/${PARTY}.conf and edit it"
+# shellcheck source=../config/party/party.conf.example
+source "$PARTY_CONFIG"
+
+PUBLISH_BRANCH="publish"
 PARTY_SYNC_TAG="replica/${PARTY}/last-sync"
 
 log "Party         : $PARTY"
@@ -77,10 +85,10 @@ log "Commit message: $COMMIT_MSG"
 
 # ── Helpers ────────────────────────────────────────────────────
 
-# List publish/<party> commits since last-sync
+# List publish commits since last-sync for this party
 generate_deliver_summary() {
   cd "$INTERNAL_REPO"
-  git log --oneline --no-merges "${PARTY_SYNC_TAG}..${PUBLISH_HEAD}" \
+  git log --oneline --no-merges "${LAST_SYNC_SHA}..${PUBLISH_HEAD}" \
     | head -50
 }
 
@@ -224,15 +232,20 @@ cd "$INTERNAL_REPO"
 git rev-parse --verify "refs/heads/${PUBLISH_BRANCH}" >/dev/null 2>&1 \
   || die "Publish branch '$PUBLISH_BRANCH' not found.\n" \
          "Run initial setup first:\n" \
-         "  ./scripts/init-replica.sh --party ${PARTY} <start-tag>"
-
-git rev-parse --verify "$PARTY_SYNC_TAG" >/dev/null 2>&1 \
-  || die "Sync tag '$PARTY_SYNC_TAG' not found.\n" \
-         "Run initial setup first:\n" \
-         "  ./scripts/init-replica.sh --party ${PARTY} <start-tag>"
+         "  ./scripts/init-replica.sh <start-tag>"
 
 PUBLISH_HEAD=$(git rev-parse "$PUBLISH_BRANCH")
-LAST_SYNC_SHA=$(git rev-parse "$PARTY_SYNC_TAG")
+
+# Determine delivery base: last-sync tag (subsequent) or publish root (first)
+FIRST_DELIVERY=false
+if git rev-parse --verify "$PARTY_SYNC_TAG" >/dev/null 2>&1; then
+  LAST_SYNC_SHA=$(git rev-parse "$PARTY_SYNC_TAG")
+else
+  # First delivery: base is the empty root commit of the publish branch
+  LAST_SYNC_SHA=$(git rev-list --max-parents=0 "$PUBLISH_BRANCH")
+  FIRST_DELIVERY=true
+  log "First delivery for party '${PARTY}' (no last-sync tag found)"
+fi
 
 if [[ "$PUBLISH_HEAD" == "$LAST_SYNC_SHA" ]]; then
   ok "Already delivered. No undelivered changes on publish branch."
@@ -242,12 +255,12 @@ fi
 log "Delivery range: ${LAST_SYNC_SHA:0:8}..${PUBLISH_HEAD:0:8}"
 
 # ── Step 2: Generate diff patch ───────────────────────────────
-# publish/<party> already has EXCLUDE_PATHS applied by stage-publish.sh
+# publish branch already has EXCLUDE_PATHS applied by init-replica.sh / stage-publish.sh
 TIMESTAMP=$(date +%Y%m%d-%H%M%S)
 PATCH_FILE=$(mktemp /tmp/deliver-XXXXXX.patch)
 trap 'rm -f "$PATCH_FILE"' EXIT
 
-git diff "${PARTY_SYNC_TAG}..${PUBLISH_BRANCH}" > "$PATCH_FILE"
+git diff "${LAST_SYNC_SHA}..${PUBLISH_BRANCH}" > "$PATCH_FILE"
 
 if [[ ! -s "$PATCH_FILE" ]]; then
   ok "No diff. Skipping."
@@ -274,6 +287,7 @@ if [[ "$OUTPUT_MODE" == "patch" ]]; then
   "commit_msg":     "${COMMIT_MSG}",
   "publish_head":   "${PUBLISH_HEAD}",
   "last_sync_sha":  "${LAST_SYNC_SHA}",
+  "first_delivery": ${FIRST_DELIVERY},
   "timestamp":      "${TIMESTAMP}",
   "party":          "${PARTY}",
   "sync_branch":    "sync/${TIMESTAMP}",
@@ -354,7 +368,7 @@ elif [[ "$MODE" == "direct" ]]; then
   ok "Pushed directly to main"
 fi
 
-# ── Step 3: Advance sync tag ──────────────────────────────────
+# ── Step 3: Advance sync tags ─────────────────────────────────
 cd "$INTERNAL_REPO"
 
 SYNC_TIMESTAMP=$(date +%Y%m%d-%H%M%S)
@@ -364,6 +378,15 @@ mode: ${MODE}
 commit_msg: ${COMMIT_MSG}
 publish_head: ${PUBLISH_HEAD}
 timestamp: ${SYNC_TIMESTAMP}"
+
+# On first delivery, record an immutable init tag for this party
+if [[ "$FIRST_DELIVERY" == "true" ]]; then
+  PARTY_INIT_TAG="replica/${PARTY}/init-${SYNC_TIMESTAMP}"
+  GIT_COMMITTER_NAME="$SYNC_AUTHOR_NAME" \
+  GIT_COMMITTER_EMAIL="$SYNC_AUTHOR_EMAIL" \
+  git tag -a "$PARTY_INIT_TAG" "$PUBLISH_HEAD" -m "$TAG_MESSAGE"
+  ok "Init tag: $PARTY_INIT_TAG -> ${PUBLISH_HEAD:0:8}"
+fi
 
 GIT_COMMITTER_NAME="$SYNC_AUTHOR_NAME" \
 GIT_COMMITTER_EMAIL="$SYNC_AUTHOR_EMAIL" \

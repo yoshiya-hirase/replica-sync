@@ -2,12 +2,12 @@
 # stage-publish.sh
 #
 # Milestone sync - Phase 1.
-# Squashes changes from internal/main and opens a PR on GHE targeting
-# the publish/<party> branch. After review and merge, run
-# deliver-to-replica.sh to push the content to the external replica.
+# Squashes changes from internal/main (EXCLUDE_PATHS applied) and opens a PR
+# on GHE targeting the publish branch for internal review.
+# After review and merge, run deliver-to-replica.sh to push to external replicas.
 #
 # Usage:
-#   ./scripts/stage-publish.sh --party acme "sync: 2024-Q1"
+#   ./scripts/stage-publish.sh "sync: 2024-Q1"
 #
 set -euo pipefail
 
@@ -23,33 +23,28 @@ CONFIG_FILE="${SCRIPT_DIR}/../config/sync.conf"
 source "$CONFIG_FILE"
 
 # Defaults for optional config values (prevents -u errors when unset)
-[[ -v EXCLUDE_PATHS ]]      || EXCLUDE_PATHS=()
-: "${PUBLISH_BRANCH_PREFIX:=publish}"
+[[ -v EXCLUDE_PATHS ]] || EXCLUDE_PATHS=()
 
 log() { echo -e "\033[1;34m[stage]\033[0m $*"; }
 ok()  { echo -e "\033[1;32m[  ok  ]\033[0m $*"; }
 die() { echo -e "\033[1;31m[ err  ]\033[0m $*" >&2; exit 1; }
 
 # ── Argument parsing ───────────────────────────────────────────
-PARTY=""
 COMMIT_MSG=""
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
-    --party) PARTY="$2";      shift 2 ;;
-    --*)     die "Unknown option: $1" ;;
-    *)       COMMIT_MSG="$1"; shift ;;
+    --*) die "Unknown option: $1" ;;
+    *)   COMMIT_MSG="$1"; shift ;;
   esac
 done
 
-[[ -n "$PARTY" ]] || die "Specify a party name with --party\n  Example: $0 --party acme \"sync: 2024-Q1\""
 COMMIT_MSG="${COMMIT_MSG:-"sync: $(date +%Y-%m-%d)"}"
 
-PUBLISH_BRANCH="${PUBLISH_BRANCH_PREFIX}/${PARTY}"
+PUBLISH_BRANCH="publish"
 TIMESTAMP=$(date +%Y%m%d-%H%M%S)
-SYNC_BRANCH="sync/${PARTY}/${TIMESTAMP}"
+SYNC_BRANCH="sync/${TIMESTAMP}"
 
-log "Party         : $PARTY"
 log "Commit message: $COMMIT_MSG"
 log "Publish branch: $PUBLISH_BRANCH"
 log "Sync branch   : $SYNC_BRANCH"
@@ -69,7 +64,7 @@ build_exclude_args
 git rev-parse --verify "refs/heads/${PUBLISH_BRANCH}" >/dev/null 2>&1 \
   || die "Publish branch '$PUBLISH_BRANCH' not found.\n" \
          "Run initial setup first:\n" \
-         "  ./scripts/init-replica.sh --party ${PARTY} <start-tag>"
+         "  ./scripts/init-replica.sh <start-tag>"
 
 PUBLISH_HEAD=$(git rev-parse "$PUBLISH_BRANCH")
 INTERNAL_HEAD=$(git rev-parse HEAD)
@@ -99,7 +94,7 @@ fi
 
 log "Patch size: $(wc -l < "$PATCH_FILE") lines"
 
-# ── Step 3: Create sync branch based on publish/<party> ───────
+# ── Step 3: Create sync branch based on publish ───────────────
 log "Creating temporary worktree..."
 git worktree add "$WORK_DIR" -b "$SYNC_BRANCH" "$PUBLISH_BRANCH"
 
@@ -134,7 +129,7 @@ cd "$INTERNAL_REPO"
 log "Pushing sync branch to GHE..."
 git push "$INTERNAL_REMOTE" "$SYNC_BRANCH"
 
-# ── Step 6: Open PR on GHE (sync -> publish/<party>) ─────────
+# ── Step 6: Open PR on GHE (sync/TIMESTAMP -> publish) ───────
 SUMMARY_FOR_PR=$(
   git log --oneline --no-merges "${PUBLISH_HEAD}..${INTERNAL_HEAD}" \
     -- . "${EXCLUDE_ARGS[@]}" | head -50
@@ -155,7 +150,7 @@ ${SUMMARY_FOR_PR}
 \`\`\`
 
 > After review, merge this PR into \`${PUBLISH_BRANCH}\`, then run
-> \`deliver-to-replica.sh\` to push to the external replica."
+> \`deliver-to-replica.sh --party <name>\` to push to each external replica."
 
 GH_HOST="$GH_HOST" gh pr create \
   --repo  "${GH_ORG}/${GH_REPO}" \
@@ -168,5 +163,5 @@ ok "PR created on GHE: ${SYNC_BRANCH} -> ${PUBLISH_BRANCH}"
 echo ""
 echo "Next steps:"
 echo "  1. Review and merge the PR on GHE into ${PUBLISH_BRANCH}"
-echo "  2. Deliver to external replica:"
-echo "     ./scripts/deliver-to-replica.sh --party ${PARTY} \"${COMMIT_MSG}\""
+echo "  2. For each 3rd party, run deliver-to-replica.sh:"
+echo "     ./scripts/deliver-to-replica.sh --party <name> \"${COMMIT_MSG}\""

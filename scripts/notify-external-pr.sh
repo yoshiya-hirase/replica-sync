@@ -6,13 +6,13 @@
 #
 # Usage:
 #   # Accepted
-#   ./scripts/notify-external-pr.sh --meta pr-meta.json --status accepted
+#   ./scripts/notify-external-pr.sh --party acme --meta pr-meta.json --status accepted
 #
 #   # Partially accepted
-#   ./scripts/notify-external-pr.sh --meta pr-meta.json --status partial
+#   ./scripts/notify-external-pr.sh --party acme --meta pr-meta.json --status partial
 #
 #   # Rejected
-#   ./scripts/notify-external-pr.sh --meta pr-meta.json \
+#   ./scripts/notify-external-pr.sh --party acme --meta pr-meta.json \
 #     --status rejected --reason "Conflicts with design direction"
 #
 set -euo pipefail
@@ -28,12 +28,14 @@ ok()  { echo -e "\033[1;32m[  ok ]\033[0m $*"; }
 die() { echo -e "\033[1;31m[ err ]\033[0m $*" >&2; exit 1; }
 
 # ── Argument parsing ───────────────────────────────────────────
+PARTY=""
 META_FILE=""
 STATUS=""
 REASON=""
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
+    --party)  PARTY="$2";     shift 2 ;;
     --meta)   META_FILE="$2"; shift 2 ;;
     --status) STATUS="$2";    shift 2 ;;
     --reason) REASON="$2";    shift 2 ;;
@@ -41,6 +43,7 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
+[[ -n "$PARTY"     ]] || die "Specify a party name with --party\n  Example: $0 --party acme --meta pr-meta.json --status accepted"
 [[ -f "$META_FILE" ]] || die "Meta file not found: $META_FILE"
 [[ -n "$STATUS"    ]] || die "Specify --status accepted / partial / rejected"
 
@@ -48,6 +51,12 @@ case "$STATUS" in
   accepted|partial|rejected) ;;
   *) die "--status must be accepted, partial, or rejected" ;;
 esac
+
+# Load per-party config (provides REPLICA_GH_REPO)
+PARTY_CONFIG="${SCRIPT_DIR}/../config/party/${PARTY}.conf"
+[[ -f "$PARTY_CONFIG" ]] || die "Party config not found: $PARTY_CONFIG\n  Run: cp config/party/party.conf.example config/party/${PARTY}.conf and edit it"
+# shellcheck source=../config/party/party.conf.example
+source "$PARTY_CONFIG"
 
 PR_NUMBER=$(jq -r '.pr_number' "$META_FILE")
 
