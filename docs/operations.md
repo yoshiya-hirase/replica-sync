@@ -46,33 +46,36 @@ $EDITOR config/sync.conf
 
 ### 設定項目一覧
 
+凡例: **必須** = スクリプトが参照する / **―** = そのスクリプトでは参照しない
+
 #### 社内リポジトリ (GHE)
 
-| 変数 | 説明 | 例 |
-|---|---|---|
-| `INTERNAL_REPO` | 社内 monorepo のローカルパス（絶対パス） | `/path/to/internal-monorepo` |
-| `INTERNAL_REMOTE` | GHE の remote 名 | `origin` |
-| `GH_HOST` | GHE のホスト名（`gh` CLI の `GH_HOST` に使用） | `github.your-company.com` |
-| `GH_ORG` | GHE の Organization 名 | `org` |
-| `GH_REPO` | GHE のリポジトリ名 | `internal` |
+| 変数 | 説明 | init `push` | init `export` | sync | 例 |
+|---|---|:---:|:---:|:---:|---|
+| `INTERNAL_REPO` | 社内 monorepo のローカルパス（絶対パス） | **必須** | **必須** | **必須** | `/path/to/internal-monorepo` |
+| `INTERNAL_REMOTE` | GHE の remote 名 | ― | ― | **必須** | `origin` |
+| `GH_HOST` | GHE のホスト名（`gh` CLI の `GH_HOST` に使用） | ― | ― | **必須** | `github.your-company.com` |
+| `GH_ORG` | GHE の Organization 名 | ― | ― | **必須** | `org` |
+| `GH_REPO` | GHE のリポジトリ名 | ― | ― | **必須** | `internal` |
 
 #### レプリカリポジトリ (github.com)
 
-| 変数 | 説明 | 例 |
-|---|---|---|
-| `REPLICA_REPO` | レプリカのローカルパス（絶対パス） | `/path/to/replica` |
-| `REPLICA_REMOTE` | レプリカの remote 名 | `origin` |
-| `REPLICA_BRANCH` | レプリカの同期先ブランチ | `main` |
-| `REPLICA_GH_REPO` | github.com の `組織名/リポジトリ名`（`gh pr create` に使用） | `your-org/replica` |
+| 変数 | 説明 | init `push` | init `export` | sync | 例 |
+|---|---|:---:|:---:|:---:|---|
+| `REPLICA_REPO` | レプリカのローカルパス（絶対パス） | ― | ― | **必須** | `/path/to/replica` |
+| `REPLICA_REMOTE` | レプリカの remote 名 | ― | ― | **必須** | `origin` |
+| `REPLICA_BRANCH` | レプリカの同期先ブランチ | ― | ― | **必須** | `main` |
+| `REPLICA_GH_REPO` | github.com の `組織名/リポジトリ名`（push 先・`gh pr create` に使用） | **必須** | ― | **必須** | `your-org/replica` |
+
+`export` モードでは 3rd party がリポジトリを作成した後に `REPLICA_GH_REPO` を設定する。
 
 #### 同期設定
 
-| 変数 | 説明 | 備考 |
-|---|---|---|
-| `SYNC_TAG` | 同期起点を記録するタグ名 | 通常 `replica/last-sync` のまま変更不要 |
-| `SYNC_AUTHOR_NAME` | squash コミットの author 名 | 社内開発者名を外部に出さないための Bot 名 |
-| `SYNC_AUTHOR_EMAIL` | squash コミットの author メールアドレス | 同上 |
-| `EXCLUDE_PATHS` | レプリカへの同期から除外するパスの配列 | 社内専用サービスや内部スクリプトのパスを列挙する |
+| 変数 | 説明 | init `push` | init `export` | sync | 備考 |
+|---|---|:---:|:---:|:---:|---|
+| `SYNC_AUTHOR_NAME` | コミット・タグの author 名 | **必須** | **必須** | **必須** | 社内開発者名を外部に出さないための Bot 名 |
+| `SYNC_AUTHOR_EMAIL` | コミット・タグの author メールアドレス | **必須** | **必須** | **必須** | 同上 |
+| `EXCLUDE_PATHS` | レプリカへの同期から除外するパスの配列 | ― | ― | **必須** | 社内専用サービスや内部スクリプトのパスを列挙する |
 
 `EXCLUDE_PATHS` の設定例:
 
@@ -86,9 +89,9 @@ EXCLUDE_PATHS=(
 
 #### patch モード設定
 
-| 変数 | 説明 | 例 |
-|---|---|---|
-| `PATCH_OUTPUT_DIR` | `patch` モード時の出力先ディレクトリ | `./sync-patches` |
+| 変数 | 説明 | init `push` | init `export` | sync | 例 |
+|---|---|:---:|:---:|:---:|---|
+| `PATCH_OUTPUT_DIR` | `sync --mode patch` 時の出力先ディレクトリ | ― | ― | **必須** | `./sync-patches` |
 
 ---
 
