@@ -29,6 +29,8 @@ CONFIG_FILE="${SCRIPT_DIR}/../config/sync.conf"
 # shellcheck source=../config/sync.conf.example
 source "$CONFIG_FILE"
 
+: "${PUBLISH_BRANCH_PREFIX:=publish}"
+
 log() { echo -e "\033[1;34m[init]\033[0m $*"; }
 ok()  { echo -e "\033[1;32m[  ok ]\033[0m $*"; }
 die() { echo -e "\033[1;31m[ err ]\033[0m $*" >&2; exit 1; }
@@ -172,8 +174,14 @@ GIT_COMMITTER_NAME="$SYNC_AUTHOR_NAME" \
 GIT_COMMITTER_EMAIL="$SYNC_AUTHOR_EMAIL" \
 git tag -a "$PARTY_SYNC_TAG" "$START_TAG" -m "$TAG_MESSAGE"
 
+# ── Step 5: publish ブランチを作成 ───────────────────────────
+PUBLISH_BRANCH="${PUBLISH_BRANCH_PREFIX}/${PARTY}"
+log "publish ブランチを作成中: $PUBLISH_BRANCH"
+git branch "$PUBLISH_BRANCH" "$START_TAG"
+
 ok "初回切り出しタグ: $PARTY_INIT_TAG"
 ok "同期起点タグ    : $PARTY_SYNC_TAG → $START_TAG"
+ok "publish ブランチ: $PUBLISH_BRANCH → $START_TAG"
 ok "初回セットアップ完了"
 echo ""
 if [[ "$OUTPUT_MODE" == "push" ]]; then
@@ -186,5 +194,8 @@ else
   echo "  1. 3rd party がリポジトリをセットアップ後、URL を受け取る"
   echo "  2. config/sync.conf の REPLICA_GH_REPO にその URL を設定する"
 fi
-echo "  マイルストーン同期は以下で実行:"
-echo "     ./scripts/sync-to-replica.sh --party ${PARTY} \"sync: <milestone>\""
+echo "  マイルストーン同期は以下の2フェーズで実行:"
+echo "    フェーズ1（GHE PR 作成・レビュー）:"
+echo "      ./scripts/stage-publish.sh --party ${PARTY} \"sync: <milestone>\""
+echo "    フェーズ2（外部レプリカへ配送）:"
+echo "      ./scripts/deliver-to-replica.sh --party ${PARTY} \"sync: <milestone>\""

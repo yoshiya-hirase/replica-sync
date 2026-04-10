@@ -33,6 +33,11 @@ REPLICA_GH_REPO="your-org/replica"
 
 # ── 同期設定 ─────────────────────────────────────────────────
 
+# publish ブランチのプレフィックス
+# publish ブランチ名は <prefix>/<party>（例: publish/acme）になる
+# 未設定時のデフォルト: publish
+PUBLISH_BRANCH_PREFIX="publish"
+
 # squash コミットの author 情報
 SYNC_AUTHOR_NAME="Platform Sync Bot"
 SYNC_AUTHOR_EMAIL="sync-bot@your-company.com"
