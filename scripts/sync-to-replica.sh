@@ -27,6 +27,9 @@ CONFIG_FILE="${SCRIPT_DIR}/../config/sync.conf"
 # shellcheck source=../config/sync.conf.example
 source "$CONFIG_FILE"
 
+# オプショナルな配列変数のデフォルト値（未定義時に -u エラーを防ぐ）
+[[ -v EXCLUDE_PATHS ]] || EXCLUDE_PATHS=()
+
 log() { echo -e "\033[1;34m[sync]\033[0m $*"; }
 ok()  { echo -e "\033[1;32m[  ok ]\033[0m $*"; }
 die() { echo -e "\033[1;31m[ err ]\033[0m $*" >&2; exit 1; }
