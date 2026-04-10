@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # apply-external-pr.sh
 #
-# 外部PR（github.com レプリカ上の PR）の差分を社内 repo に適用し、
-# 内部 PR を自動作成するスクリプト。
+# Applies a patch from an external PR (on the github.com replica) to the
+# internal repo and automatically opens an internal PR on GHE.
 #
 # Usage:
 #   ./scripts/apply-external-pr.sh --patch pr.patch --meta pr-meta.json
@@ -12,7 +12,7 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 CONFIG_FILE="${SCRIPT_DIR}/../config/sync.conf"
 
-[[ -f "$CONFIG_FILE" ]] || { echo "設定ファイルが見つかりません: $CONFIG_FILE"; exit 1; }
+[[ -f "$CONFIG_FILE" ]] || { echo "Config file not found: $CONFIG_FILE"; exit 1; }
 # shellcheck source=../config/sync.conf.example
 source "$CONFIG_FILE"
 
@@ -20,7 +20,7 @@ log() { echo -e "\033[1;34m[apply]\033[0m $*"; }
 ok()  { echo -e "\033[1;32m[  ok ]\033[0m $*"; }
 die() { echo -e "\033[1;31m[ err ]\033[0m $*" >&2; exit 1; }
 
-# ── 引数パース ─────────────────────────────────────────────────
+# ── Argument parsing ───────────────────────────────────────────
 PATCH_FILE=""
 META_FILE=""
 
@@ -28,14 +28,14 @@ while [[ $# -gt 0 ]]; do
   case "$1" in
     --patch) PATCH_FILE="$2"; shift 2 ;;
     --meta)  META_FILE="$2";  shift 2 ;;
-    *) die "不明なオプション: $1\nUsage: $0 --patch <file> --meta <file>" ;;
+    *) die "Unknown option: $1\nUsage: $0 --patch <file> --meta <file>" ;;
   esac
 done
 
-[[ -f "$PATCH_FILE" ]] || die "patch ファイルが見つかりません: $PATCH_FILE"
-[[ -f "$META_FILE"  ]] || die "meta ファイルが見つかりません: $META_FILE"
+[[ -f "$PATCH_FILE" ]] || die "Patch file not found: $PATCH_FILE"
+[[ -f "$META_FILE"  ]] || die "Meta file not found: $META_FILE"
 
-# ── メタ情報の読み込み ─────────────────────────────────────────
+# ── Load metadata ─────────────────────────────────────────────
 PR_NUMBER=$(jq -r '.pr_number' "$META_FILE")
 PR_TITLE=$(jq  -r '.pr_title'  "$META_FILE")
 PR_BODY=$(jq   -r '.pr_body'   "$META_FILE")
@@ -44,41 +44,41 @@ PR_URL=$(jq    -r '.pr_url'    "$META_FILE")
 
 BRANCH="external/3rdparty-pr-${PR_NUMBER}"
 
-log "対象 PR : #${PR_NUMBER} ${PR_TITLE}"
-log "外部作者: ${PR_AUTHOR}"
-log "内部ブランチ: ${BRANCH}"
+log "PR       : #${PR_NUMBER} ${PR_TITLE}"
+log "Author   : ${PR_AUTHOR}"
+log "Branch   : ${BRANCH}"
 
-# ── Step 1: 内部 repo を最新化 ────────────────────────────────
+# ── Step 1: Update internal repo ─────────────────────────────
 cd "$INTERNAL_REPO"
 
 git fetch "$INTERNAL_REMOTE"
 git checkout main
 git merge --ff-only "${INTERNAL_REMOTE}/main"
 
-# ── Step 2: 作業ブランチを作成 ────────────────────────────────
+# ── Step 2: Create or reset working branch ────────────────────
 if git rev-parse --verify "$BRANCH" >/dev/null 2>&1; then
-  # 同じ PR が更新されて再送された場合は既存ブランチをリセット
-  log "既存ブランチを更新: $BRANCH"
+  # Branch already exists — the external PR was updated and re-sent
+  log "Resetting existing branch: $BRANCH"
   git checkout "$BRANCH"
   git reset --hard "${INTERNAL_REMOTE}/main"
 else
   git checkout -b "$BRANCH"
 fi
 
-# ── Step 3: patch を適用 ──────────────────────────────────────
-log "patch を適用中..."
+# ── Step 3: Apply the patch ───────────────────────────────────
+log "Applying patch..."
 
 if ! git apply --3way --whitespace=nowarn "$PATCH_FILE"; then
-  die "patch の適用に失敗しました。\n" \
-      "競合を手動で解消してから以下を実行してください:\n" \
+  die "Patch apply failed.\n" \
+      "Resolve conflicts manually, then run:\n" \
       "  git add -A && git commit ..."
 fi
 
-# ── Step 4: コミット ──────────────────────────────────────────
+# ── Step 4: Commit ────────────────────────────────────────────
 git add -A
 
 if git diff --cached --quiet; then
-  die "適用後の差分がありません。patch が既に取り込まれている可能性があります。"
+  die "No diff after apply. The patch may already be incorporated."
 fi
 
 GIT_AUTHOR_NAME="$SYNC_AUTHOR_NAME" \
@@ -92,14 +92,14 @@ Original author: ${PR_AUTHOR}
 
 ${PR_BODY}"
 
-ok "コミット完了: $(git rev-parse --short HEAD)"
+ok "Commit: $(git rev-parse --short HEAD)"
 
-# ── Step 5: GHE へ push ───────────────────────────────────────
-log "GHE へ push 中..."
+# ── Step 5: Push to GHE ──────────────────────────────────────
+log "Pushing to GHE..."
 git push "$INTERNAL_REMOTE" "$BRANCH" --force-with-lease
 
-# ── Step 6: 内部 PR を作成（既存なら更新済みなのでスキップ） ───
-log "内部 PR を確認中..."
+# ── Step 6: Open internal PR (skip if already exists) ────────
+log "Checking for existing internal PR..."
 
 PR_EXISTS=$(GH_HOST="$GH_HOST" gh pr list \
   --repo "${GH_ORG}/${GH_REPO}" \
@@ -108,28 +108,28 @@ PR_EXISTS=$(GH_HOST="$GH_HOST" gh pr list \
   --jq '.[0].number // empty')
 
 if [[ -n "$PR_EXISTS" ]]; then
-  ok "既存の内部 PR #${PR_EXISTS} を更新しました（push 済み）"
+  ok "Existing internal PR #${PR_EXISTS} updated (push complete)"
 else
   INTERNAL_PR_URL=$(GH_HOST="$GH_HOST" gh pr create \
     --repo "${GH_ORG}/${GH_REPO}" \
     --title "[External] ${PR_TITLE}" \
-    --body "## 外部 PR の転送
+    --body "## Forwarded external PR
 
-| 項目       | 内容 |
-|------------|------|
-| 外部 PR    | ${PR_URL} |
-| 外部作者   | ${PR_AUTHOR} |
+| Field          | Value |
+|----------------|-------|
+| External PR    | ${PR_URL} |
+| External author| ${PR_AUTHOR} |
 
-## 元の PR 説明
+## Original PR description
 
 ${PR_BODY}
 
 ---
-> この PR は外部レプリカからの変更を社内でレビューするために自動生成されました。
-> 承認・マージ後、外部 PR を Close してください（マージしないこと）。" \
+> This PR was auto-generated to review an external contribution internally.
+> After approval and merge, close the external PR (do not merge it there)." \
     --base main \
     --head "$BRANCH" \
     --label "external-contribution")
 
-  ok "内部 PR を作成しました: ${INTERNAL_PR_URL}"
+  ok "Internal PR created: ${INTERNAL_PR_URL}"
 fi
