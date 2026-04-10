@@ -67,39 +67,54 @@ $EDITOR config/sync.conf
 
 ### 設定項目一覧
 
-凡例: **必須** = スクリプトが参照する / **―** = そのスクリプトでは参照しない
+列はオペレーションのフェーズに対応する。
+
+| 凡例 | 意味 |
+|---|---|
+| **必須** | そのフェーズでスクリプトが参照する |
+| 注記付き | 一部のモードまたは条件でのみ必要 |
+| ― | そのフェーズでは参照しない |
+
+列の対応スクリプト:
+
+| 列 | スクリプト |
+|---|---|
+| `[A] init` | `init-replica.sh` |
+| `[B-1] stage` | `stage-publish.sh` |
+| `[B-2] deliver` | `deliver-to-replica.sh` |
+| `[C] external` | `apply-external-pr.sh` / `cherry-pick-partial.sh` / `notify-external-pr.sh` |
 
 #### 社内リポジトリ (GHE)
 
-| 変数 | 説明 | init `push` | init `export` | sync | 例 |
-|---|---|:---:|:---:|:---:|---|
-| `INTERNAL_REPO` | 社内 monorepo のローカルパス（絶対パス） | **必須** | **必須** | **必須** | `/path/to/internal-monorepo` |
-| `INTERNAL_REMOTE` | GHE の remote 名 | ― | ― | **必須** | `origin` |
-| `GH_HOST` | GHE のホスト名（`gh` CLI の `GH_HOST` に使用） | ― | ― | **必須** | `github.your-company.com` |
-| `GH_ORG` | GHE の Organization 名 | ― | ― | **必須** | `org` |
-| `GH_REPO` | GHE のリポジトリ名 | ― | ― | **必須** | `internal` |
+| 変数 | 説明 | `[A] init` | `[B-1] stage` | `[B-2] deliver` | `[C] external` | 例 |
+|---|---|:---:|:---:|:---:|:---:|---|
+| `INTERNAL_REPO` | 社内 monorepo のローカルパス（絶対パス） | **必須** | **必須** | **必須** | **必須** | `/path/to/internal-monorepo` |
+| `INTERNAL_REMOTE` | GHE の remote 名 | ― | **必須** | ― | apply のみ | `origin` |
+| `GH_HOST` | GHE のホスト名（`gh` CLI の `GH_HOST` に使用） | ― | **必須** | ― | apply のみ | `github.your-company.com` |
+| `GH_ORG` | GHE の Organization 名 | ― | **必須** | ― | apply のみ | `org` |
+| `GH_REPO` | GHE のリポジトリ名 | ― | **必須** | ― | apply のみ | `internal` |
 
 #### レプリカリポジトリ (github.com)
 
-| 変数 | 説明 | init `push` | init `export` | sync | 例 |
-|---|---|:---:|:---:|:---:|---|
-| `REPLICA_REPO` | レプリカのローカルパス（絶対パス） | ― | ― | **必須** | `/path/to/replica` |
-| `REPLICA_REMOTE` | レプリカの remote 名 | ― | ― | **必須** | `origin` |
-| `REPLICA_BRANCH` | レプリカの同期先ブランチ | ― | ― | **必須** | `main` |
-| `REPLICA_GH_REPO` | github.com の `組織名/リポジトリ名`（push 先・`gh pr create` に使用） | **必須** | ― | **必須** | `your-org/replica` |
+| 変数 | 説明 | `[A] init` | `[B-1] stage` | `[B-2] deliver` | `[C] external` | 例 |
+|---|---|:---:|:---:|:---:|:---:|---|
+| `REPLICA_REPO` | レプリカのローカルパス（絶対パス） | ― | ― | push のみ | ― | `/path/to/replica` |
+| `REPLICA_REMOTE` | レプリカの remote 名 | ― | ― | push のみ | ― | `origin` |
+| `REPLICA_BRANCH` | レプリカの同期先ブランチ | ― | ― | push のみ | ― | `main` |
+| `REPLICA_GH_REPO` | github.com の `組織名/リポジトリ名` | push のみ | ― | push または pr mode | notify のみ | `your-org/replica` |
 
-`export` モードでは 3rd party がリポジトリを作成した後に `REPLICA_GH_REPO` を設定する。
+`[A] init --output export` モードでは `REPLICA_GH_REPO` を初回実行時に設定不要。
+3rd party がリポジトリを作成した後に設定する。
 
 #### 同期設定
 
-凡例の `sync` 列は `stage-publish.sh` / `deliver-to-replica.sh` の両方を指す。
-
-| 変数 | 説明 | init `push` | init `export` | sync | 備考 |
-|---|---|:---:|:---:|:---:|---|
-| `PUBLISH_BRANCH_PREFIX` | publish ブランチ名のプレフィックス | **必須** | **必須** | **必須** | 未設定時は `publish`。ブランチ名は `<prefix>/<party>` |
-| `SYNC_AUTHOR_NAME` | コミット・タグの author 名 | **必須** | **必須** | **必須** | 社内開発者名を外部に出さないための Bot 名 |
-| `SYNC_AUTHOR_EMAIL` | コミット・タグの author メールアドレス | **必須** | **必須** | **必須** | 同上 |
-| `EXCLUDE_PATHS` | レプリカへの同期から除外するパスの配列 | ― | ― | `stage` のみ | `stage-publish.sh` で適用。`deliver-to-replica.sh` では不要 |
+| 変数 | 説明 | `[A] init` | `[B-1] stage` | `[B-2] deliver` | `[C] external` | 備考 |
+|---|---|:---:|:---:|:---:|:---:|---|
+| `PUBLISH_BRANCH_PREFIX` | publish ブランチ名のプレフィックス | **必須** | **必須** | **必須** | ― | 未設定時は `publish`。ブランチ名は `<prefix>/<party>` |
+| `SYNC_AUTHOR_NAME` | コミット・タグの author 名 | **必須** | **必須** | **必須** | **必須** | 社内開発者名を外部に出さないための Bot 名 |
+| `SYNC_AUTHOR_EMAIL` | コミット・タグの author メールアドレス | **必須** | **必須** | **必須** | **必須** | 同上 |
+| `EXCLUDE_PATHS` | レプリカへの同期から除外するパスの配列 | ― | **必須** | ― | ― | `stage-publish.sh` で適用済みのため deliver では不要 |
+| `PATCH_OUTPUT_DIR` | `--output patch` 時の出力先ディレクトリ | ― | ― | patch のみ | ― | 未設定時は `./sync-patches` |
 
 `EXCLUDE_PATHS` の設定例:
 
@@ -110,12 +125,6 @@ EXCLUDE_PATHS=(
   "scripts/internal/"         # 社内用スクリプト
 )
 ```
-
-#### patch モード設定
-
-| 変数 | 説明 | init `push` | init `export` | sync | 例 |
-|---|---|:---:|:---:|:---:|---|
-| `PATCH_OUTPUT_DIR` | `sync --output patch` 時の出力先ディレクトリ（未設定時は `./sync-patches`） | ― | ― | 省略可 | `./sync-patches` |
 
 ---
 
