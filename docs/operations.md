@@ -3,18 +3,37 @@
 ## 全体構成
 
 ```
-GitHub Enterprise (社内)                  github.com (社外レプリカ)
-─────────────────────────                 ─────────────────────────
-github.your-company.com                   github.com
-  └── org/internal-monorepo                 └── your-org/replica
-        │                                         │
-        │  [A] 初回セットアップ                    ├── main        ← 同期先
-        │  [B] マイルストーン同期  ──────────────► └── 3rdparty/  ← 3rd party 開発
-        │                                               foo
-        │  [C] 外部PR取り込み     ◄──────────────────────
+GitHub Enterprise (社内)                         github.com (社外レプリカ)
+────────────────────────────────────             ─────────────────────────
+github.your-company.com                          github.com
+  └── org/internal-monorepo                        └── your-org/replica
+        │                                                │
+        │  [A] 初回セットアップ                           ├── main   ← 同期先
+        │      init-replica.sh                           └── 3rdparty/foo  ← 3rd party 開発
+        │        → publish/<party> ブランチ作成
         │
-  replica/last-sync タグ
-  replica/sync-YYYYMMDD タグ（任意）
+        │  [B] マイルストーン同期（2フェーズ）
+        │
+        │  フェーズ1: stage-publish.sh
+        │    internal/main
+        │      → squash + EXCLUDE_PATHS 除外
+        │      → sync/<party>/TIMESTAMP ブランチ
+        │      → GHE PR: sync/... → publish/<party>
+        │      → [社内レビュー・マージ]
+        │      → publish/<party> に反映
+        │
+        │  フェーズ2: deliver-to-replica.sh    ──────────────────────►
+        │    publish/<party>                          external/main に反映
+        │      → push (pr/direct)
+        │         または patch + apply.sh 出力
+        │
+        │  [C] 外部PR取り込み                  ◄──────────────────────
+        │
+  タグ (すべて internal-monorepo に保持)
+    replica/<party>/init-TIMESTAMP   ← 初回切り出しの不変記録
+    replica/<party>/last-sync        ← 最後に配送した publish HEAD（可動）
+    replica/<party>/sync-TIMESTAMP   ← 各配送の不変記録
+    milestone/YYYY-QN                ← マイルストーン基点
 ```
 
 ---
@@ -140,37 +159,28 @@ github.com 側はレプリカへの書き込みのみを許可する Deploy Key 
 `git archive` でファイルツリーのスナップショットのみを取り出し、履歴ゼロの新規リポジトリとして初期化する。
 
 ```bash
-# init-replica.sh
-INTERNAL_REPO="/path/to/internal-monorepo"
-START_TAG="milestone/2024-Q1"   # 開始タグ（内部 repo に事前に作成）
-REPLICA_DIR="/tmp/replica-init"
-REPLICA_URL="git@github.com:your-org/replica.git"
-SYNC_AUTHOR_NAME="Platform Sync Bot"
-SYNC_AUTHOR_EMAIL="sync-bot@your-company.com"
+# push モード（社内側から github.com へ直接 push）
+./scripts/init-replica.sh --party acme milestone/2024-Q1
 
-# 1. タグ時点のファイルツリーのみを展開（コミット履歴を含まない）
-rm -rf "$REPLICA_DIR" && mkdir -p "$REPLICA_DIR"
-cd "$INTERNAL_REPO"
-git archive "$START_TAG" | tar -x -C "$REPLICA_DIR"
+# export モード（tar を生成し、3rd party が自分の GitHub アカウントへ展開）
+./scripts/init-replica.sh --party acme --output export milestone/2024-Q1
 
-# 2. 履歴ゼロの新規リポジトリとして初期コミット
-cd "$REPLICA_DIR"
-git init
-git branch -m main
-git add -A
-GIT_AUTHOR_NAME="$SYNC_AUTHOR_NAME" \
-GIT_AUTHOR_EMAIL="$SYNC_AUTHOR_EMAIL" \
-GIT_COMMITTER_NAME="$SYNC_AUTHOR_NAME" \
-GIT_COMMITTER_EMAIL="$SYNC_AUTHOR_EMAIL" \
-git commit -m "initial: $START_TAG"
+# タグにメモを付与する場合
+./scripts/init-replica.sh --party acme --message "acme社との協業開始用" milestone/2024-Q1
+```
 
-# 3. github.com へ push
-git remote add origin "$REPLICA_URL"
-git push -u origin main
+スクリプトが行うこと:
 
-# 4. 社内 repo に同期タグを設定（次回同期の起点）
-cd "$INTERNAL_REPO"
-git tag replica/last-sync "$START_TAG"
+```
+1. git archive で START_TAG 時点のファイルツリーを展開（コミット履歴を含まない）
+2. 履歴ゼロの新規リポジトリとして初期コミット（author=Bot）
+3. 配送
+   push モード: github.com へ直接 push
+   export モード: tar.gz + セットアップ手順書を init-exports/ に出力
+4. 内部 repo にタグを設定
+   replica/<party>/init-TIMESTAMP  ← 初回切り出しの不変記録
+   replica/<party>/last-sync       ← 同期起点（可動ポインタ）
+5. publish/<party> ブランチを START_TAG 時点で作成
 ```
 
 実行後の状態:
@@ -180,7 +190,9 @@ git tag replica/last-sync "$START_TAG"
 A - B - C - D - E        (main)
                 ↑
           milestone/2024-Q1
-          replica/last-sync   ← 同期起点
+          replica/acme/init-TIMESTAMP  ← 初回切り出し記録
+          replica/acme/last-sync       ← 同期起点（可動）
+          publish/acme                 ← 配送正本ブランチ
 
 レプリカ (github.com)
 X                        (main)
@@ -510,18 +522,38 @@ synchronize         → Artifact を再ダウンロードして再実行
 ## タグ管理まとめ
 
 すべてのタグは社内 GHE の `internal-monorepo` 側に保持する。
+タグはすべてアノテーションタグ（`git tag -a`）で作成し、party・output・timestamp 等のメタ情報をメッセージに記録する。
 
-| タグ名 | 種別 | 役割 |
-|---|---|---|
-| `replica/last-sync` | 可動（`-f` で上書き） | 次回 diff の起点。sync 完了後に HEAD へ前進 |
-| `replica/sync-YYYYMMDD-HHMMSS` | 不変 | 各同期の記録。任意で作成 |
-| `milestone/YYYY-QN` | 不変 | マイルストーク基点。初回セットアップの `START_TAG` にも使用 |
+| タグ名 | 種別 | 作成タイミング | 役割 |
+|---|---|---|---|
+| `replica/<party>/init-TIMESTAMP` | 不変 | `init-replica.sh` 実行時 | 初回切り出しの記録 |
+| `replica/<party>/last-sync` | 可動（`-f` で上書き） | `deliver-to-replica.sh` 配送完了時 | 最後に配送した `publish/<party>` HEAD を指す |
+| `replica/<party>/sync-TIMESTAMP` | 不変 | `deliver-to-replica.sh` 配送完了時 | 各配送の不変記録 |
+| `milestone/YYYY-QN` | 不変 | 手動 | マイルストーン基点。初回セットアップの `START_TAG` にも使用 |
+
+タグに記録されるメタ情報の例（`git show replica/acme/last-sync`）:
+
+```
+tag replica/acme/last-sync
+Tagger: Platform Sync Bot <sync-bot@your-company.com>
+Date:   Mon Apr 1 12:00:00 2024 +0900
+
+party: acme
+output: push
+mode: pr
+commit_msg: sync: 2024-Q1
+publish_head: a1b2c3d4...
+timestamp: 20240401-120000
+```
 
 ---
 
 ## CI 自動化（任意）
 
-マイルストーンタグをトリガーに同期を自動実行する場合の GHE Actions 構成:
+2フェーズ構成のうちフェーズ1（`stage-publish.sh`）はマイルストーンタグをトリガーに自動実行できる。
+フェーズ2（`deliver-to-replica.sh`）は publish PR のマージをトリガーにするか、手動実行する。
+
+### フェーズ1 CI（マイルストーンタグ → GHE PR 作成）
 
 ```yaml
 # .github/workflows/sync-replica.yml (GHE 側)
@@ -531,7 +563,36 @@ on:
       - 'milestone/*'   # milestone/2024-Q1 をトリガーに
 
 jobs:
-  sync:
+  stage:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GHE_TOKEN }}
+
+      - name: Stage publish PR
+        env:
+          GH_TOKEN: ${{ secrets.GHE_TOKEN }}
+        run: |
+          ./scripts/stage-publish.sh \
+            --party acme \
+            "sync: ${{ github.ref_name }}"
+```
+
+### フェーズ2 CI（publish PR マージ → 外部レプリカへ配送）
+
+```yaml
+# .github/workflows/deliver-replica.yml (GHE 側)
+on:
+  pull_request:
+    types: [closed]
+    branches:
+      - 'publish/*'   # publish/acme へのマージをトリガーに
+
+jobs:
+  deliver:
+    if: github.event.pull_request.merged == true
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -555,11 +616,16 @@ jobs:
       - name: Clone replica
         run: git clone git@github.com:your-org/replica.git /tmp/replica
 
-      - name: Run sync
+      - name: Deliver to replica
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_COM_TOKEN }}
         run: |
-          ./scripts/sync-to-replica.sh \
-            --mode pr \
-            "sync: ${{ github.ref_name }}"
+          # ブランチ名 publish/acme から party 名を抽出
+          PARTY="${{ github.event.pull_request.base.ref }}"
+          PARTY="${PARTY#publish/}"
+          ./scripts/deliver-to-replica.sh \
+            --party "$PARTY" \
+            "${{ github.event.pull_request.title }}"
 ```
 
 ---
