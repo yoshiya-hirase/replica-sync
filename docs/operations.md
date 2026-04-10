@@ -91,7 +91,7 @@ EXCLUDE_PATHS=(
 
 | 変数 | 説明 | init `push` | init `export` | sync | 例 |
 |---|---|:---:|:---:|:---:|---|
-| `PATCH_OUTPUT_DIR` | `sync --mode patch` 時の出力先ディレクトリ | ― | ― | **必須** | `./sync-patches` |
+| `PATCH_OUTPUT_DIR` | `sync --output patch` 時の出力先ディレクトリ（未設定時は `./sync-patches`） | ― | ― | 省略可 | `./sync-patches` |
 
 ---
 
@@ -232,40 +232,45 @@ git show replica/sync-20240201-153000:services/api/src/main.kt
 
 ### B-2. 同期スクリプト (`sync-to-replica.sh`)
 
-3つのモードをサポートする。
+`--output` で配送方法を、`--mode` で適用方法を指定する。
 
-| モード | 動作 | sync タグ更新 |
-|---|---|---|
-| `pr`（デフォルト） | 同期ブランチを作成し PR として push | 即時 |
-| `direct` | レプリカ `main` へ直接 push | 即時 |
-| `patch` | パッチセットをファイルに出力して終了 | 手動（適用確認後） |
+| `--output` | `--mode` | 動作 | sync タグ更新 |
+|---|---|---|---|
+| `push`（デフォルト） | `pr`（デフォルト） | 同期ブランチを作成し PR として push | 即時 |
+| `push` | `direct` | レプリカ `main` へ直接 push | 即時 |
+| `patch` | `pr`（デフォルト） | パッチセットと apply.sh を出力。3rd party が PR を作成 | 手動（適用確認後） |
+| `patch` | `direct` | パッチセットと apply.sh を出力。3rd party が main へ直接適用 | 手動（適用確認後） |
 
 ```bash
 # PR として push（デフォルト）
-./sync-to-replica.sh "sync: 2024-Q1"
+./sync-to-replica.sh --party acme "sync: 2024-Q1"
 
-# 直接 push
-./sync-to-replica.sh --mode direct "sync: 2024-Q1"
+# main へ直接 push
+./sync-to-replica.sh --party acme --mode direct "sync: 2024-Q1"
 
-# パッチセット生成のみ（レプリカ側に自動適用しない）
-./sync-to-replica.sh --mode patch "sync: 2024-Q1"
+# パッチセット出力（3rd party が PR を作成）
+./sync-to-replica.sh --party acme --output patch "sync: 2024-Q1"
+
+# パッチセット出力（3rd party が main へ直接適用）
+./sync-to-replica.sh --party acme --output patch --mode direct "sync: 2024-Q1"
 ```
 
-`patch` モードで生成されるファイル:
+`--output patch` で生成されるファイル:
 
 ```
 sync-patches/
 ├── sync-20240401-120000.patch       # 差分 patch
-├── sync-20240401-120000-meta.json   # メタ情報（commit範囲、除外パス等）
-└── sync-20240401-120000-summary.txt # 含まれる内部コミット一覧
+├── sync-20240401-120000-meta.json   # メタ情報（PR タイトル・本文・commit 範囲等）
+├── sync-20240401-120000-summary.txt # 含まれる内部コミット一覧
+└── sync-20240401-120000-apply.sh    # 3rd party が実行するスタンドアロン適用スクリプト
 ```
 
-`patch` モードでは sync タグを即時更新しない。
-レプリカへの適用確認後に以下を手動実行する。
+`--output patch` では sync タグを即時更新しない。
+3rd party による適用確認後に以下を手動実行する。
 
 ```bash
 cd /path/to/internal-monorepo
-git tag -f replica/last-sync <INTERNAL_HEAD>
+git tag -f replica/<party>/last-sync <INTERNAL_HEAD>
 ```
 
 ### B-3. 除外パスの管理
@@ -282,7 +287,9 @@ EXCLUDE_PATHS=(
 
 `git diff` の pathspec `:!path` 形式で差分生成時に除外される。
 
-### B-4. PR モードのフロー
+### B-4. 各モードのフロー
+
+#### `--output push --mode pr`（デフォルト）
 
 ```
 内部 repo (GHE)                       レプリカ (github.com)
@@ -294,19 +301,41 @@ EXCLUDE_PATHS=(
 5. squash commit (author=Bot)
 6. sync ブランチを push             ──► sync/20240401-120000
 7. PR を作成                        ──► PR: sync/... → main
-8. replica/last-sync タグを更新
+8. replica/<party>/last-sync タグを更新
 ```
 
 3rd party は sync PR をレビューし、問題なければ `main` へマージする。
 
+#### `--output patch --mode pr`
+
+```
+内部 repo (GHE)                       3rd party
+─────────────────                     ──────────────────────────────────
+1. git diff で差分 patch 生成
+2. meta.json（PR タイトル・本文含む）生成
+3. apply.sh 生成
+4. ファイルを 3rd party へ送付      ──► patch / meta.json / apply.sh を受領
+                                        ./sync-TIMESTAMP-apply.sh を実行
+                                          → sync ブランチを作成
+                                          → patch を適用
+                                          → push & gh pr create
+                                          → PR: sync/... → main
+5. 適用確認後に sync タグを手動更新
+```
+
+#### `--output patch --mode direct`
+
+上記と同じ流れで、apply.sh が PR を作成せず `main` へ直接 push する。
+
 ### B-5. モード選択の指針
 
-| | `pr` | `direct` | `patch` |
-|---|---|---|---|
-| 3rd party によるレビュー | 可能 | 不可 | 不可（手動受け渡し後に可） |
-| 適用タイミングの制御 | 3rd party 側 | 社内側 | 社内側 |
-| GHE → github.com の疎通 | 必要 | 必要 | 不要 |
-| 適したケース | 協調度が高い | 迅速に反映したい | セキュリティ要件が厳しい |
+| | `push --mode pr` | `push --mode direct` | `patch --mode pr` | `patch --mode direct` |
+|---|---|---|---|---|
+| 3rd party によるレビュー | 可能 | 不可 | 可能 | 不可 |
+| 適用タイミングの制御 | 3rd party 側 | 社内側 | 3rd party 側 | 3rd party 側 |
+| GHE → github.com の疎通 | 必要 | 必要 | 不要 | 不要 |
+| 3rd party に gh CLI が必要 | 不要 | 不要 | 必要 | 不要 |
+| 適したケース | 協調度が高い | 迅速に反映したい | 疎通不可・レビューあり | 疎通不可・直接適用 |
 
 ---
 
@@ -555,10 +584,12 @@ jobs:
 ### マイルストーン同期
 
 - [ ] 内部 repo で `milestone/YYYY-QN` タグを作成
-- [ ] `sync-to-replica.sh` を実行（または CI が自動実行）
-- [ ] `pr` モードの場合: 3rd party が sync PR をレビュー・マージ
-- [ ] `patch` モードの場合: パッチ適用確認後に `replica/last-sync` を手動更新
-- [ ] 任意: `replica/sync-TIMESTAMP` タグで同期履歴を記録
+- [ ] `sync-to-replica.sh --party <name>` を実行（または CI が自動実行）
+- [ ] `--output push --mode pr` の場合: 3rd party が sync PR をレビュー・マージ
+- [ ] `--output push --mode direct` の場合: push 完了で完了
+- [ ] `--output patch` の場合: patch / meta.json / apply.sh を 3rd party へ送付
+- [ ] `--output patch` の場合: 適用確認後に `replica/<party>/last-sync` を手動更新
+- [ ] 任意: `replica/<party>/sync-TIMESTAMP` タグで同期履歴を記録
 
 ### 外部PR取り込み
 
