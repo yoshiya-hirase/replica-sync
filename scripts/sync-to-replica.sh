@@ -2,18 +2,18 @@
 # sync-to-replica.sh
 #
 # マイルストーン同期スクリプト。
-# 前回同期タグ (replica/last-sync) からの差分を squash して
+# 前回同期タグ (replica/<party>/last-sync) からの差分を squash して
 # レプリカへ送る。コミット author は Bot に差し替える。
 #
 # Usage:
 #   # PR として push（デフォルト）
-#   ./scripts/sync-to-replica.sh "sync: 2024-Q1"
+#   ./scripts/sync-to-replica.sh --party acme "sync: 2024-Q1"
 #
 #   # 直接 main へ push
-#   ./scripts/sync-to-replica.sh --mode direct "sync: 2024-Q1"
+#   ./scripts/sync-to-replica.sh --party acme --mode direct "sync: 2024-Q1"
 #
 #   # パッチセットのみ生成（レプリカへは自動適用しない）
-#   ./scripts/sync-to-replica.sh --mode patch "sync: 2024-Q1"
+#   ./scripts/sync-to-replica.sh --party acme --mode patch "sync: 2024-Q1"
 #
 set -euo pipefail
 
@@ -33,15 +33,19 @@ die() { echo -e "\033[1;31m[ err ]\033[0m $*" >&2; exit 1; }
 
 # ── 引数パース ─────────────────────────────────────────────────
 MODE="pr"
+PARTY=""
 COMMIT_MSG=""
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
-    --mode) MODE="$2"; shift 2 ;;
-    --*)    die "不明なオプション: $1" ;;
-    *)      COMMIT_MSG="$1"; shift ;;
+    --mode)  MODE="$2";  shift 2 ;;
+    --party) PARTY="$2"; shift 2 ;;
+    --*)     die "不明なオプション: $1" ;;
+    *)       COMMIT_MSG="$1"; shift ;;
   esac
 done
+
+[[ -n "$PARTY" ]] || die "--party でパーティ名を指定してください\n  例: $0 --party acme \"sync: 2024-Q1\""
 
 COMMIT_MSG="${COMMIT_MSG:-"sync: $(date +%Y-%m-%d)"}"
 
@@ -50,7 +54,11 @@ case "$MODE" in
   *) die "--mode は pr / patch / direct のいずれかを指定してください" ;;
 esac
 
-log "実行モード: $MODE"
+# パーティ別の同期タグ名
+PARTY_SYNC_TAG="replica/${PARTY}/last-sync"
+
+log "パーティ          : $PARTY"
+log "実行モード        : $MODE"
 log "コミットメッセージ: $COMMIT_MSG"
 
 # ── ヘルパー ───────────────────────────────────────────────────
@@ -63,7 +71,7 @@ build_exclude_args() {
 
 generate_sync_summary() {
   cd "$INTERNAL_REPO"
-  git log --oneline --no-merges "${SYNC_TAG}..${INTERNAL_HEAD}" \
+  git log --oneline --no-merges "${PARTY_SYNC_TAG}..${INTERNAL_HEAD}" \
     -- . "${EXCLUDE_ARGS[@]}" \
     | head -50
 }
@@ -92,12 +100,12 @@ EOF
 cd "$INTERNAL_REPO"
 build_exclude_args
 
-git rev-parse --verify "$SYNC_TAG" >/dev/null 2>&1 \
-  || die "同期タグ '$SYNC_TAG' が見つかりません\n" \
+git rev-parse --verify "$PARTY_SYNC_TAG" >/dev/null 2>&1 \
+  || die "同期タグ '$PARTY_SYNC_TAG' が見つかりません\n" \
          "初回セットアップを先に実行してください:\n" \
-         "  ./scripts/init-replica.sh <start-tag>"
+         "  ./scripts/init-replica.sh --party ${PARTY} <start-tag>"
 
-SYNC_BASE=$(git rev-parse "$SYNC_TAG")
+SYNC_BASE=$(git rev-parse "$PARTY_SYNC_TAG")
 INTERNAL_HEAD=$(git rev-parse HEAD)
 
 if [[ "$SYNC_BASE" == "$INTERNAL_HEAD" ]]; then
@@ -112,7 +120,7 @@ TIMESTAMP=$(date +%Y%m%d-%H%M%S)
 PATCH_FILE=$(mktemp /tmp/replica-sync-XXXXXX.patch)
 trap 'rm -f "$PATCH_FILE"' EXIT
 
-git diff "${SYNC_TAG}..HEAD" -- . "${EXCLUDE_ARGS[@]}" > "$PATCH_FILE"
+git diff "${PARTY_SYNC_TAG}..HEAD" -- . "${EXCLUDE_ARGS[@]}" > "$PATCH_FILE"
 
 if [[ ! -s "$PATCH_FILE" ]]; then
   ok "除外パスを差し引くと差分なし。スキップ。"
@@ -149,7 +157,7 @@ EOF
   echo "  summary : $DEST_SUMMARY"
   echo ""
   echo "レプリカへの適用後、以下で sync タグを更新してください:"
-  echo "  cd $INTERNAL_REPO && git tag -f $SYNC_TAG $INTERNAL_HEAD"
+  echo "  cd $INTERNAL_REPO && git tag -f $PARTY_SYNC_TAG $INTERNAL_HEAD"
   exit 0
 fi
 
@@ -208,8 +216,20 @@ fi
 
 # ── Step 6: 内部 sync タグを更新 ─────────────────────────────
 cd "$INTERNAL_REPO"
-git tag -f "$SYNC_TAG" "$INTERNAL_HEAD"
-git tag "replica/sync-${TIMESTAMP}"
 
-ok "同期タグを更新: $SYNC_TAG → ${INTERNAL_HEAD:0:8}"
-ok "同期完了 🎉"
+SYNC_TIMESTAMP=$(date +%Y%m%d-%H%M%S)
+TAG_MESSAGE="party: ${PARTY}
+mode: ${MODE}
+commit_msg: ${COMMIT_MSG}
+timestamp: ${SYNC_TIMESTAMP}"
+
+GIT_COMMITTER_NAME="$SYNC_AUTHOR_NAME" \
+GIT_COMMITTER_EMAIL="$SYNC_AUTHOR_EMAIL" \
+git tag -a -f "$PARTY_SYNC_TAG" "$INTERNAL_HEAD" -m "$TAG_MESSAGE"
+
+GIT_COMMITTER_NAME="$SYNC_AUTHOR_NAME" \
+GIT_COMMITTER_EMAIL="$SYNC_AUTHOR_EMAIL" \
+git tag -a "replica/${PARTY}/sync-${SYNC_TIMESTAMP}" "$INTERNAL_HEAD" -m "$TAG_MESSAGE"
+
+ok "同期タグを更新: $PARTY_SYNC_TAG → ${INTERNAL_HEAD:0:8}"
+ok "同期完了"
