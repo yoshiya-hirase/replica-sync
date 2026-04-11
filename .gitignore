@@ -1,10 +1,18 @@
-# 設定ファイル（パス・認証情報を含むため）
+# Configuration files (contain paths and credentials)
 config/sync.conf
+config/party/*.conf
 
-# 生成されたパッチセット
+# Generated patch sets
 sync-patches/
+test-patches/
 
-# 一時ファイル
+# Test artifacts (downloaded CI artifacts)
+test-artifacts/
+
+# Test configuration
+test/test.conf
+
+# Temporary files
 /tmp/
 *.patch
 *.tmp

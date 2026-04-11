@@ -1,0 +1,21 @@
+# replica-sync test configuration
+# Copy to test/test.conf and edit.
+# test.conf is listed in .gitignore.
+
+# Your GitHub username (repos will be created under this account)
+GITHUB_USER="your-username"
+
+# Local base directory for cloned test repositories
+TEST_DIR="${HOME}/replica-sync-test"
+
+# Internal repository name (will be created on GitHub as a private repo)
+INTERNAL_REPO_NAME="test-internal-monorepo"
+
+# 3rd party repository names
+# Party 1: push mode delivery (git push directly)
+PARTY1_NAME="acme"
+PARTY1_REPO_NAME="test-replica-acme"
+
+# Party 2: patch mode delivery (file transfer)
+PARTY2_NAME="beta"
+PARTY2_REPO_NAME="test-replica-beta"
