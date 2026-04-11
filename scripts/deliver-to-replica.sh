@@ -409,6 +409,11 @@ fi
 if [[ "$MODE" == "pr" ]]; then
   git push "$REPLICA_REMOTE" "$SYNC_BRANCH"
 
+  # Ensure the "sync" label exists in the replica repo
+  gh label list --repo "$REPLICA_GH_REPO" --json name --jq '.[].name' \
+    | grep -qx "sync" \
+    || gh label create "sync" --repo "$REPLICA_GH_REPO" --color "0075ca" --description "sync delivery from internal"
+
   gh pr create \
     --repo  "$REPLICA_GH_REPO" \
     --title "$COMMIT_MSG" \
