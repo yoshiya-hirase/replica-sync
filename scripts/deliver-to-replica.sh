@@ -376,12 +376,18 @@ if [[ "$MODE" == "pr" ]]; then
   log "Sync branch: $SYNC_BRANCH"
 fi
 
-log "Applying patch..."
-git apply --3way --whitespace=nowarn "$PATCH_FILE" \
-  || die "Patch apply failed. Resolve conflicts and re-run."
-
 if [[ "$FIRST_DELIVERY" == "true" ]]; then
+  # First delivery: clear working tree and apply via git archive (clean slate).
+  # git apply --3way cannot resolve cross-repo base objects, causing false conflicts
+  # when the replica already has files (e.g. a GitHub-initialized README).
+  log "First delivery: applying via git archive (clean slate)..."
+  git rm -rf . --quiet
+  git -C "$INTERNAL_REPO" archive "$PUBLISH_HEAD" | tar -x -C .
   copy_bootstrap "."
+else
+  log "Applying patch..."
+  git apply --3way --whitespace=nowarn "$PATCH_FILE" \
+    || die "Patch apply failed. Resolve conflicts and re-run."
 fi
 
 git add -A
