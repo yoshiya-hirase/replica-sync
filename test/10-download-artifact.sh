@@ -48,30 +48,40 @@ mkdir -p "$OUTPUT_DIR"
 # ── Find the latest CI run for this PR ────────────────────────
 log "Looking for CI run for PR #${PR_NUMBER} on ${REPLICA_GH_REPO}..."
 
+# Get the current head SHA of the PR to identify the correct run
+HEAD_SHA=$(gh pr view "$PR_NUMBER" \
+  --repo "$REPLICA_GH_REPO" \
+  --json headRefOid --jq '.headRefOid')
+
+[[ -n "$HEAD_SHA" ]] || die "Could not get head SHA for PR #${PR_NUMBER}"
+log "PR head SHA: ${HEAD_SHA:0:8}"
+
+# Find the completed successful run triggered by this PR's head SHA
 RUN_ID=$(gh run list \
   --repo "$REPLICA_GH_REPO" \
   --workflow "pr-to-internal.yml" \
   --json databaseId,status,conclusion,headSha \
-  --jq '.[] | select(.status == "completed" and .conclusion == "success") | .databaseId' \
+  --jq --arg sha "$HEAD_SHA" \
+  '.[] | select(.headSha == $sha and .status == "completed" and .conclusion == "success") | .databaseId' \
   | head -1)
 
 if [[ -z "$RUN_ID" ]]; then
-  # Check if there are any runs at all
   ALL_RUNS=$(gh run list \
     --repo "$REPLICA_GH_REPO" \
     --workflow "pr-to-internal.yml" \
-    --json databaseId,status,conclusion \
-    --jq '.[] | "\(.databaseId)  status=\(.status)  conclusion=\(.conclusion)"' \
+    --json databaseId,status,conclusion,headSha \
+    --jq --arg sha "$HEAD_SHA" \
+    '.[] | select(.headSha == $sha) | "\(.databaseId)  status=\(.status)  conclusion=\(.conclusion)"' \
     | head -5)
 
   if [[ -z "$ALL_RUNS" ]]; then
-    die "No CI runs found for pr-to-internal.yml.\n" \
-        "Make sure the workflow file is committed to the party repo and a PR exists."
-  else
-    echo "Recent runs:"
-    echo "$ALL_RUNS"
-    die "No completed successful run found. Wait for CI to finish:\n" \
+    die "No CI runs found for PR #${PR_NUMBER} (head: ${HEAD_SHA:0:8}).\n" \
+        "Make sure the workflow has run:\n" \
         "  gh run list --repo ${REPLICA_GH_REPO} --workflow pr-to-internal.yml"
+  else
+    echo "Runs for this PR head:"
+    echo "$ALL_RUNS"
+    die "No completed successful run found. Wait for CI to finish."
   fi
 fi
 
