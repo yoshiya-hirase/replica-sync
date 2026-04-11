@@ -362,9 +362,38 @@ EOF
   echo "  $DEST_META"
   echo "  $DEST_APPLY"
   [[ -d "$DEST_BOOTSTRAP" ]] && echo "  $DEST_BOOTSTRAP  (bootstrap directory)"
-  echo ""
-  echo "After confirming the replica is updated, advance the sync tag:"
-  echo "  cd $INTERNAL_REPO && git tag -a -f $PARTY_SYNC_TAG $PUBLISH_HEAD -m \"delivered: ${TIMESTAMP}\""
+
+  # ── Advance sync tags (patch mode) ───────────────────────────
+  # Tags are advanced at patch generation time. The patch set is the
+  # deliverable; whether the 3rd party has applied it is out of scope.
+  SYNC_TIMESTAMP=$(date +%Y%m%d-%H%M%S)
+  TAG_MESSAGE="party: ${PARTY}
+output: ${OUTPUT_MODE}
+mode: ${MODE}
+commit_msg: ${COMMIT_MSG}
+publish_head: ${PUBLISH_HEAD}
+timestamp: ${SYNC_TIMESTAMP}"
+
+  cd "$INTERNAL_REPO"
+
+  if [[ "$FIRST_DELIVERY" == "true" ]]; then
+    PARTY_INIT_TAG="replica/${PARTY}/init-${SYNC_TIMESTAMP}"
+    GIT_COMMITTER_NAME="$SYNC_AUTHOR_NAME" \
+    GIT_COMMITTER_EMAIL="$SYNC_AUTHOR_EMAIL" \
+    git tag -a "$PARTY_INIT_TAG" "$PUBLISH_HEAD" -m "$TAG_MESSAGE"
+    ok "Init tag: $PARTY_INIT_TAG -> ${PUBLISH_HEAD:0:8}"
+  fi
+
+  GIT_COMMITTER_NAME="$SYNC_AUTHOR_NAME" \
+  GIT_COMMITTER_EMAIL="$SYNC_AUTHOR_EMAIL" \
+  git tag -a -f "$PARTY_SYNC_TAG" "$PUBLISH_HEAD" -m "$TAG_MESSAGE"
+
+  GIT_COMMITTER_NAME="$SYNC_AUTHOR_NAME" \
+  GIT_COMMITTER_EMAIL="$SYNC_AUTHOR_EMAIL" \
+  git tag -a "replica/${PARTY}/sync-${SYNC_TIMESTAMP}" "$PUBLISH_HEAD" -m "$TAG_MESSAGE"
+
+  ok "Sync tag advanced: $PARTY_SYNC_TAG -> ${PUBLISH_HEAD:0:8}"
+  ok "Delivery complete"
   exit 0
 fi
 
