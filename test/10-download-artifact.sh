@@ -61,8 +61,7 @@ RUN_ID=$(gh run list \
   --repo "$REPLICA_GH_REPO" \
   --workflow "pr-to-internal.yml" \
   --json databaseId,status,conclusion,headSha \
-  --jq --arg sha "$HEAD_SHA" \
-  '.[] | select(.headSha == $sha and .status == "completed" and .conclusion == "success") | .databaseId' \
+  --jq ".[] | select(.headSha == \"$HEAD_SHA\" and .status == \"completed\" and .conclusion == \"success\") | .databaseId" \
   | head -1)
 
 if [[ -z "$RUN_ID" ]]; then
@@ -70,8 +69,7 @@ if [[ -z "$RUN_ID" ]]; then
     --repo "$REPLICA_GH_REPO" \
     --workflow "pr-to-internal.yml" \
     --json databaseId,status,conclusion,headSha \
-    --jq --arg sha "$HEAD_SHA" \
-    '.[] | select(.headSha == $sha) | "\(.databaseId)  status=\(.status)  conclusion=\(.conclusion)"' \
+    --jq ".[] | select(.headSha == \"$HEAD_SHA\") | \"\(.databaseId)  status=\(.status)  conclusion=\(.conclusion)\"" \
     | head -5)
 
   if [[ -z "$ALL_RUNS" ]]; then
