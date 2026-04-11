@@ -5,6 +5,9 @@
 # internal repo and automatically opens an internal PR on GHE.
 #
 # Usage:
+#   ./scripts/apply-external-pr.sh --party acme --patch pr.patch --meta pr-meta.json
+#
+#   # --party is optional; omit to use "3rdparty" as the branch prefix
 #   ./scripts/apply-external-pr.sh --patch pr.patch --meta pr-meta.json
 #
 set -euo pipefail
@@ -23,17 +26,21 @@ die() { echo -e "\033[1;31m[ err ]\033[0m $*" >&2; exit 1; }
 # ── Argument parsing ───────────────────────────────────────────
 PATCH_FILE=""
 META_FILE=""
+PARTY=""
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
-    --patch) PATCH_FILE="$(cd "$(dirname "$2")" && pwd)/$(basename "$2")"; shift 2 ;;
-    --meta)  META_FILE="$(cd "$(dirname "$2")" && pwd)/$(basename "$2")";  shift 2 ;;
-    *) die "Unknown option: $1\nUsage: $0 --patch <file> --meta <file>" ;;
+    --patch)  PATCH_FILE="$(cd "$(dirname "$2")" && pwd)/$(basename "$2")"; shift 2 ;;
+    --meta)   META_FILE="$(cd "$(dirname "$2")" && pwd)/$(basename "$2")";  shift 2 ;;
+    --party)  PARTY="$2"; shift 2 ;;
+    *) die "Unknown option: $1\nUsage: $0 --party <name> --patch <file> --meta <file>" ;;
   esac
 done
 
 [[ -f "$PATCH_FILE" ]] || die "Patch file not found: $PATCH_FILE"
 [[ -f "$META_FILE"  ]] || die "Meta file not found: $META_FILE"
+
+PARTY_SLUG="${PARTY:-3rdparty}"
 
 # ── Load metadata ─────────────────────────────────────────────
 PR_NUMBER=$(jq -r '.pr_number' "$META_FILE")
@@ -42,10 +49,11 @@ PR_BODY=$(jq   -r '.pr_body'   "$META_FILE")
 PR_AUTHOR=$(jq -r '.pr_author' "$META_FILE")
 PR_URL=$(jq    -r '.pr_url'    "$META_FILE")
 
-BRANCH="external/3rdparty-pr-${PR_NUMBER}"
+BRANCH="external/${PARTY_SLUG}-pr-${PR_NUMBER}"
 
 log "PR       : #${PR_NUMBER} ${PR_TITLE}"
 log "Author   : ${PR_AUTHOR}"
+log "Party    : ${PARTY_SLUG}"
 log "Branch   : ${BRANCH}"
 
 # ── Step 1: Update internal repo ─────────────────────────────
@@ -86,7 +94,7 @@ GIT_AUTHOR_EMAIL="$SYNC_AUTHOR_EMAIL" \
 GIT_COMMITTER_NAME="$SYNC_AUTHOR_NAME" \
 GIT_COMMITTER_EMAIL="$SYNC_AUTHOR_EMAIL" \
 git commit \
-  -m "external(3rdparty): ${PR_TITLE}" \
+  -m "external(${PARTY_SLUG}): ${PR_TITLE}" \
   -m "Forwarded from: ${PR_URL}
 Original author: ${PR_AUTHOR}
 

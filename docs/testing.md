@@ -336,12 +336,13 @@ gh run list --repo <GITHUB_USER>/test-replica-acme --workflow pr-to-internal.yml
 
 ```bash
 ./scripts/apply-external-pr.sh \
+  --party acme \
   --patch test-artifacts/acme/pr-<N>/pr.patch \
   --meta  test-artifacts/acme/pr-<N>/pr-meta.json
 ```
 
 **確認ポイント:**
-- 内部 repo に `external/3rdparty-pr-N` ブランチが作成される
+- 内部 repo に `external/acme-pr-N` ブランチが作成される
 - GHE（GitHub）上に内部 PR が作成される
 - PR に外部 PR URL・外部 author が記録されていること
 
