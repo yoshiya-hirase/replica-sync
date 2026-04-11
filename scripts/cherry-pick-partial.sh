@@ -73,7 +73,14 @@ git merge --ff-only "${INTERNAL_REMOTE}/main"
 # ── Apply only hunks matching the specified paths ─────────────
 INCLUDE_ARGS=()
 for path in "${PATHS[@]}"; do
-  INCLUDE_ARGS+=(--include="$path")
+  # Strip trailing slash; add /* suffix for directory patterns so
+  # git apply --include matches files within the directory
+  path="${path%/}"
+  if [[ "$path" != *"*"* && "$path" != *"."* ]]; then
+    INCLUDE_ARGS+=(--include="${path}/*")
+  else
+    INCLUDE_ARGS+=(--include="$path")
+  fi
 done
 
 log "Applying patch (path-filtered)..."
