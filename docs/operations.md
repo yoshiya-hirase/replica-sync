@@ -186,6 +186,16 @@ GHE 上に PR を作成する。PR をレビュー・マージすることで `p
 ./scripts/init-replica.sh --message "3rd party 協業開始" milestone/2024-Q1
 ```
 
+**引数 `START_TAG` はタグ名でなければならない。** ブランチ名を渡すとエラーになる。
+
+```
+[ err ] 'main' is not a tag. Specify a tag (e.g. milestone/v1), not a branch.
+```
+
+ブランチ名を拒否する理由: ブランチは可動なため、同じコマンドを翌日実行すると別のスナップショットが取られてしまう。
+`publish/init-TIMESTAMP` タグに「どの時点のスナップショットか」を確定的に記録するためには、
+不変のタグを指定する必要がある。
+
 スクリプトが行うこと:
 
 ```
@@ -195,6 +205,29 @@ GHE 上に PR を作成する。PR をレビュー・マージすることで `p
 4. init/TIMESTAMP ブランチにスナップショット内容をコミット（author=Bot）
 5. GHE に push し PR 作成: init/TIMESTAMP → publish
 6. publish/init-TIMESTAMP タグを START_TAG に設定
+```
+
+**git の hint メッセージについて:**
+
+実行時に以下の hint が表示されることがある:
+
+```
+hint: You have created a nested tag. The object referred to by your new tag is
+hint: already a tag. If you meant to tag the object that it points to, use:
+hint:   git tag -f publish/init-TIMESTAMP milestone/v1^{}
+```
+
+これはエラーでも警告でもなく、動作に問題はない。
+
+発生する理由: `publish/init-TIMESTAMP` タグが `milestone/v1` という別のタグオブジェクトを指す
+（タグがタグを指す = nested tag）ため、git が「コミットを直接指すつもりなら `^{}` を使え」と
+アドバイスしている。今回は「どのマイルストーンタグから開始したか」を記録する意図があるため、
+タグオブジェクトを指すのは正しい設計であり、hint は無視してよい。
+
+気になる場合は以下で抑制できる:
+
+```bash
+git config set advice.nestedTag false
 ```
 
 実行後の状態:
