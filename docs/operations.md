@@ -456,47 +456,47 @@ github.com (レプリカ)                GHE (内部)
 ### C-1. 外部PR差分生成 (`pr-to-internal.yml`)
 
 github.com レプリカ側の GitHub Actions。
-PR 作成・更新時に patch と meta を Artifact として保存する。
+3rd party が `main` へ PR を作成・更新した際に patch と meta を Artifact として保存する。
+Artifact を社内担当者がダウンロードし、次の apply スクリプトに渡す。
+
+#### トリガー設計: `pull_request_target`
+
+`pull_request` イベントでは `GITHUB_TOKEN` が PR API へのアクセス権を持たず、
+`gh pr diff` / `gh pr view` が HTTP 403 になる。
+そのため `pull_request_target` を使用する。
+
+| 項目 | `pull_request` | `pull_request_target` |
+|---|---|---|
+| 実行コンテキスト | PR ヘッドのコード | ベースリポジトリ（`main`）のコード |
+| `GITHUB_TOKEN` の PR API アクセス | 不可（HTTP 403） | 可能 |
+| セキュリティリスク | 低い | PR ヘッドのコードを checkout すると高い |
+
+**本ワークフローは PR ヘッドを checkout しない**（diff は API 経由で取得）ため、
+`pull_request_target` を安全に使用できる。
+
+#### `sync/*` ブランチのスキップ
+
+`deliver-to-replica.sh` が作成するデリバリー PR のヘッドブランチは `sync/TIMESTAMP` 形式。
+これは社内からの同期配送であり、3rd party の開発変更ではないため、ジョブレベルの `if` 条件でスキップする。
 
 ```yaml
-# .github/workflows/pr-to-internal.yml
-on:
-  pull_request:
-    types: [opened, synchronize]
-    branches: [main]
-
-jobs:
-  generate-patch:
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-
-      - name: Generate patch and meta
-        run: |
-          gh pr diff ${{ github.event.pull_request.number }} \
-            --patch > pr.patch
-
-          cat > pr-meta.json << EOF
-          {
-            "pr_number": ${{ github.event.pull_request.number }},
-            "pr_title":  "${{ github.event.pull_request.title }}",
-            "pr_body":   "${{ github.event.pull_request.body }}",
-            "pr_author": "${{ github.event.pull_request.user.login }}",
-            "pr_url":    "${{ github.event.pull_request.html_url }}",
-            "head_sha":  "${{ github.event.pull_request.head.sha }}"
-          }
-          EOF
-
-      - uses: actions/upload-artifact@v4
-        with:
-          name: pr-${{ github.event.pull_request.number }}
-          path: |
-            pr.patch
-            pr-meta.json
+if: ${{ !startsWith(github.head_ref, 'sync/') }}
 ```
 
-Artifact を社内担当者がダウンロードし、次の apply スクリプトに渡す。
+ワークフロー自体はトリガーされるが、ジョブが "skipped" となる。
+
+#### 生成される Artifact
+
+| ファイル | 内容 |
+|---|---|
+| `pr.patch` | PR の差分（`git apply` で適用可能な形式） |
+| `pr-meta.json` | PR 番号・タイトル・本文・author・URL・head SHA |
+
+Artifact 名: `pr-{PR番号}-{head SHA}`（保持期間: 30日）
+
+#### PR へのコメント
+
+ワークフロー完了時に PR へ自動コメントを投稿して、社内への転送を通知する。
 
 ### C-2. 社内への適用 (`apply-external-pr.sh`)
 
