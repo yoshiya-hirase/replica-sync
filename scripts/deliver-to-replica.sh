@@ -78,12 +78,31 @@ source "$PARTY_CONFIG"
 PUBLISH_BRANCH="publish"
 PARTY_SYNC_TAG="replica/${PARTY}/last-sync"
 
+BOOTSTRAP_COMMON_DIR="${SCRIPT_DIR}/../config/replica-bootstrap"
+BOOTSTRAP_PARTY_DIR="${BOOTSTRAP_COMMON_DIR}/${PARTY}"
+
 log "Party         : $PARTY"
 log "Output mode   : $OUTPUT_MODE"
 log "Apply mode    : $MODE"
 log "Commit message: $COMMIT_MSG"
 
 # ── Helpers ────────────────────────────────────────────────────
+
+# Copy bootstrap files to a destination directory.
+# Applies common files first (skipping the party-named subdir), then party-specific.
+copy_bootstrap() {
+  local dest="$1"
+  if [[ -d "$BOOTSTRAP_COMMON_DIR" ]]; then
+    # find handles hidden dirs like .github/ that shell globs skip
+    find "$BOOTSTRAP_COMMON_DIR" -maxdepth 1 -mindepth 1 ! -name "$PARTY" \
+      -exec cp -r {} "${dest}/" \;
+    log "Bootstrap: common files applied"
+  fi
+  if [[ -d "$BOOTSTRAP_PARTY_DIR" ]]; then
+    cp -r "${BOOTSTRAP_PARTY_DIR}/." "${dest}/"
+    log "Bootstrap: party-specific files applied (${PARTY})"
+  fi
+}
 
 # List publish commits since last-sync for this party
 generate_deliver_summary() {
@@ -147,6 +166,7 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PATCH_FILE="${SCRIPT_DIR}/sync-%%TIMESTAMP%%.patch"
 META_FILE="${SCRIPT_DIR}/sync-%%TIMESTAMP%%-meta.json"
+BOOTSTRAP_DIR="${SCRIPT_DIR}/sync-%%TIMESTAMP%%-bootstrap"
 SYNC_BRANCH="sync/%%TIMESTAMP%%"
 REPLICA_BRANCH="main"
 DEFAULT_MODE="%%DEFAULT_MODE%%"
@@ -169,10 +189,19 @@ done
 command -v jq >/dev/null 2>&1 || die "jq is not installed"
 [[ "$MODE" == "pr" ]] && { command -v gh >/dev/null 2>&1 || die "gh CLI is not installed"; }
 
-PR_TITLE=$(jq -r '.pr_title' "$META_FILE")
-PR_BODY=$(jq  -r '.pr_body'  "$META_FILE")
+PR_TITLE=$(jq -r '.pr_title'       "$META_FILE")
+PR_BODY=$(jq  -r '.pr_body'        "$META_FILE")
+FIRST_DELIVERY=$(jq -r '.first_delivery' "$META_FILE")
 
 log "Apply mode: $MODE"
+
+apply_bootstrap() {
+  if [[ "$FIRST_DELIVERY" == "true" && -d "$BOOTSTRAP_DIR" ]]; then
+    log "Applying bootstrap files..."
+    cp -r "${BOOTSTRAP_DIR}/." .
+    ok "Bootstrap applied"
+  fi
+}
 
 if [[ "$MODE" == "pr" ]]; then
   log "Creating branch: $SYNC_BRANCH"
@@ -181,6 +210,8 @@ if [[ "$MODE" == "pr" ]]; then
   log "Applying patch..."
   git apply --3way --whitespace=nowarn "$PATCH_FILE" \
     || die "Patch apply failed. Resolve conflicts and re-run."
+
+  apply_bootstrap
 
   git add -A
   if ! git diff --cached --quiet; then
@@ -207,6 +238,8 @@ elif [[ "$MODE" == "direct" ]]; then
   log "Applying patch..."
   git apply --3way --whitespace=nowarn "$PATCH_FILE" \
     || die "Patch apply failed. Resolve conflicts and re-run."
+
+  apply_bootstrap
 
   git add -A
   if ! git diff --cached --quiet; then
@@ -280,6 +313,7 @@ if [[ "$OUTPUT_MODE" == "patch" ]]; then
   DEST_META="${PATCH_OUTPUT_DIR}/sync-${TIMESTAMP}-meta.json"
   DEST_SUMMARY="${PATCH_OUTPUT_DIR}/sync-${TIMESTAMP}-summary.txt"
   DEST_APPLY="${PATCH_OUTPUT_DIR}/sync-${TIMESTAMP}-apply.sh"
+  DEST_BOOTSTRAP="${PATCH_OUTPUT_DIR}/sync-${TIMESTAMP}-bootstrap"
 
   cp "$PATCH_FILE" "$DEST_PATCH"
 
@@ -303,16 +337,25 @@ EOF
   generate_deliver_summary > "$DEST_SUMMARY"
   generate_apply_sh "$DEST_APPLY"
 
+  if [[ "$FIRST_DELIVERY" == "true" ]] && \
+     { [[ -d "$BOOTSTRAP_COMMON_DIR" ]] || [[ -d "$BOOTSTRAP_PARTY_DIR" ]]; }; then
+    mkdir -p "$DEST_BOOTSTRAP"
+    copy_bootstrap "$DEST_BOOTSTRAP"
+    ok "Bootstrap: files collected -> $DEST_BOOTSTRAP"
+  fi
+
   ok "Patch set generated:"
-  echo "  patch   : $DEST_PATCH"
-  echo "  meta    : $DEST_META"
-  echo "  summary : $DEST_SUMMARY"
-  echo "  apply   : $DEST_APPLY"
+  echo "  patch     : $DEST_PATCH"
+  echo "  meta      : $DEST_META"
+  echo "  summary   : $DEST_SUMMARY"
+  echo "  apply     : $DEST_APPLY"
+  [[ -d "$DEST_BOOTSTRAP" ]] && echo "  bootstrap : $DEST_BOOTSTRAP"
   echo ""
   echo "Send the following files to the 3rd party:"
   echo "  $DEST_PATCH"
   echo "  $DEST_META"
   echo "  $DEST_APPLY"
+  [[ -d "$DEST_BOOTSTRAP" ]] && echo "  $DEST_BOOTSTRAP  (bootstrap directory)"
   echo ""
   echo "After confirming the replica is updated, advance the sync tag:"
   echo "  cd $INTERNAL_REPO && git tag -a -f $PARTY_SYNC_TAG $PUBLISH_HEAD -m \"delivered: ${TIMESTAMP}\""
@@ -336,6 +379,10 @@ fi
 log "Applying patch..."
 git apply --3way --whitespace=nowarn "$PATCH_FILE" \
   || die "Patch apply failed. Resolve conflicts and re-run."
+
+if [[ "$FIRST_DELIVERY" == "true" ]]; then
+  copy_bootstrap "."
+fi
 
 git add -A
 

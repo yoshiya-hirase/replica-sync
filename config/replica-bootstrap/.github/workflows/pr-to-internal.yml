@@ -1,0 +1,69 @@
+name: Forward PR to Internal
+
+# github.com レプリカ側の GitHub Actions。
+# 3rd party が main へ PR を作成・更新した際に
+# 差分 patch と meta を Artifact として保存する。
+# （社内担当者が Artifact をダウンロードして apply-external-pr.sh に渡す）
+
+on:
+  pull_request:
+    types: [opened, synchronize]
+    branches:
+      - main
+
+jobs:
+  generate-patch:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout replica
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Generate patch
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh pr diff ${{ github.event.pull_request.number }} \
+            --patch > pr.patch
+
+      - name: Generate meta
+        run: |
+          # pr_body 内の改行・特殊文字を jq で安全にエスケープ
+          PR_BODY=$(gh pr view ${{ github.event.pull_request.number }} \
+            --json body --jq '.body')
+
+          jq -n \
+            --argjson pr_number '${{ github.event.pull_request.number }}' \
+            --arg     pr_title  '${{ github.event.pull_request.title }}' \
+            --arg     pr_body   "$PR_BODY" \
+            --arg     pr_author '${{ github.event.pull_request.user.login }}' \
+            --arg     pr_url    '${{ github.event.pull_request.html_url }}' \
+            --arg     head_sha  '${{ github.event.pull_request.head.sha }}' \
+            '{
+              pr_number: $pr_number,
+              pr_title:  $pr_title,
+              pr_body:   $pr_body,
+              pr_author: $pr_author,
+              pr_url:    $pr_url,
+              head_sha:  $head_sha
+            }' > pr-meta.json
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Upload Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: pr-${{ github.event.pull_request.number }}-${{ github.event.pull_request.head.sha }}
+          path: |
+            pr.patch
+            pr-meta.json
+          retention-days: 30
+
+      - name: Comment on PR
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh pr comment ${{ github.event.pull_request.number }} \
+            --body "🔄 差分パッチを生成しました。社内レビュープロセスに転送中です。
+            結果はレビュー完了後にコメントで通知されます。"
