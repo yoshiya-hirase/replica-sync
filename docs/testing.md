@@ -138,7 +138,9 @@ cat config/sync.conf
 
 ```bash
 # PR URL を確認
-gh pr list --repo <GITHUB_USER>/test-internal-monorepo --head "init/"
+gh pr list --repo <GITHUB_USER>/test-internal-monorepo \
+  --json number,title,headRefName \
+  --jq '.[] | select(.headRefName | startswith("init/")) | "#\(.number) \(.headRefName) — \(.title)"'
 ```
 
 **確認ポイント:**
@@ -178,7 +180,9 @@ gh pr list --repo <GITHUB_USER>/test-internal-monorepo --head "init/"
 #### Step 7 (手動): PR をレビューしてマージ
 
 ```bash
-gh pr list --repo <GITHUB_USER>/test-internal-monorepo --head "sync/"
+gh pr list --repo <GITHUB_USER>/test-internal-monorepo \
+  --json number,title,headRefName \
+  --jq '.[] | select(.headRefName | startswith("sync/")) | "#\(.number) \(.headRefName) — \(.title)"'
 ```
 
 ---
