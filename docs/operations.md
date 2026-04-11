@@ -52,6 +52,7 @@ github.your-company.com                          github.com
 | `apply-external-pr.sh` | Internal | Apply external PR and create internal PR |
 | `cherry-pick-partial.sh` | Internal | Selectively incorporate external PR changes |
 | `notify-external-pr.sh` | Internal | Notify external PR of acceptance decision |
+| `generate-party-onboarding.sh` | Internal | Generate onboarding package (zip) for a 3rd party |
 
 ---
 
@@ -249,9 +250,48 @@ publish: [empty base] ─ [snapshot commit]
                                 ↑ HEAD
 ```
 
-### A-3. First Delivery to 3rd Party
+### A-3. Generate Onboarding Package
 
-After the PR is merged, run `deliver-to-replica.sh` for each 3rd party.
+Before or alongside the first delivery, generate an onboarding package and send it to the 3rd party.
+The package contains a complete guide (`ONBOARDING.md`) and the CI workflow they need to install.
+
+```bash
+# Minimal
+./scripts/generate-party-onboarding.sh --party acme
+
+# With repo slug and delivery mode
+./scripts/generate-party-onboarding.sh \
+  --party acme \
+  --repo your-org/replica-acme \
+  --delivery-mode push
+```
+
+Options:
+
+| Option | Description | Default |
+|---|---|---|
+| `--party <name>` | Party name (required) | — |
+| `--repo <org/repo>` | github.com repo slug for clone URL in docs | `your-org/replica-<party>` |
+| `--delivery-mode push\|patch\|both` | Which sync delivery section to include | `both` |
+| `--output-dir <dir>` | Where to write the zip | `./party-packages` |
+
+Output: `party-packages/<party>-onboarding-TIMESTAMP.zip`
+
+Package contents:
+```
+<party>-onboarding-TIMESTAMP/
+├── ONBOARDING.md                          ← complete collaboration guide
+└── .github/workflows/pr-to-internal.yml  ← CI workflow to install in replica repo
+```
+
+Send the zip to the 3rd party with the following instructions:
+1. Extract the zip
+2. Read `ONBOARDING.md`
+3. Add `.github/workflows/pr-to-internal.yml` to their replica repo
+
+### A-4. First Delivery to 3rd Party
+
+After the publish PR is merged, run `deliver-to-replica.sh` for each 3rd party.
 On first delivery, there is no `last-sync` tag, so the entire content from the first commit of `publish` is delivered.
 
 ```bash
@@ -775,6 +815,7 @@ jobs:
 
 - [ ] Create `config/party/<party>.conf`
 - [ ] Create an empty replica repo on github.com (for push mode)
+- [ ] Generate and send onboarding package to 3rd party (see below)
 - [ ] Run `deliver-to-replica.sh --party <name> "initial: YYYY-QN"`
 - [ ] Configure Branch Protection or Ruleset on replica `main` (see below)
 - [ ] Send invitation to 3rd party

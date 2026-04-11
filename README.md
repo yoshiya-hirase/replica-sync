@@ -44,6 +44,7 @@ chmod +x scripts/*.sh
 | `scripts/apply-external-pr.sh` | Apply external PR to internal repo |
 | `scripts/cherry-pick-partial.sh` | Selectively incorporate external PR changes |
 | `scripts/notify-external-pr.sh` | Notify external PR of acceptance decision |
+| `scripts/generate-party-onboarding.sh` | Generate onboarding package for a 3rd party |
 
 ## Dependencies
 
