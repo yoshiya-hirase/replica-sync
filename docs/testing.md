@@ -279,9 +279,11 @@ PR モードの場合、GitHub 上に PR が作成される。マージ後に続
 
 #### Step 15: 配送内容を検証 & タグ確認
 
+galaxy レポの sync PR を GitHub 上でマージしてから実行する（`05-verify-delivery.sh` は party repo の `main` と比較するため）。
+
 ```bash
-./test/05-verify-delivery.sh --party beta
-./test/06-show-tags.sh --party beta
+./test/05-verify-delivery.sh --party galaxy
+./test/06-show-tags.sh --party galaxy
 ```
 
 ---
