@@ -494,9 +494,24 @@ if: ${{ !startsWith(github.head_ref, 'sync/') }}
 
 Artifact 名: `pr-{PR番号}-{head SHA}`（保持期間: 30日）
 
+#### 複数回トリガーの動作（`synchronize` イベント）
+
+`pull_request_target` のトリガー条件は `opened` と `synchronize`。
+3rd party が PR をオープンしたままブランチに追加コミットをプッシュするたびに
+`synchronize` イベントが発火し、ワークフローが再実行される。
+
+このとき:
+- 新しい Artifact が `pr-{PR番号}-{新 head SHA}` という名前で生成される
+- 古い Artifact（前回の head SHA 付き）は残ったまま
+- 社内担当者は**最新の head SHA に対応する Artifact のみを使用**すればよい
+
+これにより 3rd party が PR のレビュー中にコードを修正しても、
+社内は常に最新の差分で内部 PR を作成できる。
+
 #### PR へのコメント
 
 ワークフロー完了時に PR へ自動コメントを投稿して、社内への転送を通知する。
+PR に複数回プッシュがあった場合、コメントもその都度追加される。
 
 ### C-2. 社内への適用 (`apply-external-pr.sh`)
 
