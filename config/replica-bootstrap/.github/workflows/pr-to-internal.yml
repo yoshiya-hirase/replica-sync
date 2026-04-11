@@ -4,9 +4,16 @@ name: Forward PR to Internal
 # 3rd party が main へ PR を作成・更新した際に
 # 差分 patch と meta を Artifact として保存する。
 # （社内担当者が Artifact をダウンロードして apply-external-pr.sh に渡す）
+#
+# pull_request_target を使う理由:
+#   pull_request イベントでは GITHUB_TOKEN が PR API へのアクセス権を持たず
+#   gh pr diff / gh pr view が HTTP 403 になるため。
+#   pull_request_target はベースリポジトリのセキュリティコンテキストで動作し
+#   トークンが PR API にアクセスできる。
+#   PR ヘッドのコードは checkout しないので untrusted code は実行されない。
 
 on:
-  pull_request:
+  pull_request_target:
     types: [opened, synchronize]
     branches:
       - main
@@ -14,23 +21,26 @@ on:
 jobs:
   generate-patch:
     runs-on: ubuntu-latest
-    steps:
-      - name: Checkout replica
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
+    permissions:
+      pull-requests: read
+      contents: read
 
+    steps:
       - name: Generate patch
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           gh pr diff ${{ github.event.pull_request.number }} \
+            --repo ${{ github.repository }} \
             --patch > pr.patch
 
       - name: Generate meta
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           # pr_body 内の改行・特殊文字を jq で安全にエスケープ
           PR_BODY=$(gh pr view ${{ github.event.pull_request.number }} \
+            --repo ${{ github.repository }} \
             --json body --jq '.body')
 
           jq -n \
@@ -48,8 +58,6 @@ jobs:
               pr_url:    $pr_url,
               head_sha:  $head_sha
             }' > pr-meta.json
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Upload Artifact
         uses: actions/upload-artifact@v4
@@ -65,5 +73,5 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           gh pr comment ${{ github.event.pull_request.number }} \
-            --body "🔄 差分パッチを生成しました。社内レビュープロセスに転送中です。
-            結果はレビュー完了後にコメントで通知されます。"
+            --repo ${{ github.repository }} \
+            --body "差分パッチを生成しました。社内レビュープロセスに転送中です。結果はレビュー完了後にコメントで通知されます。"
