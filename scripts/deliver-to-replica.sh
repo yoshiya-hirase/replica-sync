@@ -296,7 +296,7 @@ TIMESTAMP=$(date +%Y%m%d-%H%M%S)
 PATCH_FILE=$(mktemp /tmp/deliver-XXXXXX.patch)
 trap 'rm -f "$PATCH_FILE"' EXIT
 
-git diff "${LAST_SYNC_SHA}..${PUBLISH_BRANCH}" > "$PATCH_FILE"
+git diff "${LAST_SYNC_SHA}..${PUBLISH_HEAD}" > "$PATCH_FILE"
 
 if [[ ! -s "$PATCH_FILE" ]]; then
   ok "No diff. Skipping."
