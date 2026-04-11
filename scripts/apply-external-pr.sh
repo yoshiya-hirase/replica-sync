@@ -26,8 +26,8 @@ META_FILE=""
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
-    --patch) PATCH_FILE="$2"; shift 2 ;;
-    --meta)  META_FILE="$2";  shift 2 ;;
+    --patch) PATCH_FILE="$(cd "$(dirname "$2")" && pwd)/$(basename "$2")"; shift 2 ;;
+    --meta)  META_FILE="$(cd "$(dirname "$2")" && pwd)/$(basename "$2")";  shift 2 ;;
     *) die "Unknown option: $1\nUsage: $0 --patch <file> --meta <file>" ;;
   esac
 done
