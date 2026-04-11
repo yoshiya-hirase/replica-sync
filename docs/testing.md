@@ -4,17 +4,50 @@
 
 ---
 
+## 元のシナリオ
+
+テストシナリオの原案。実装仕様との差異は次節「元のシナリオからの変更点」に記載する。
+
+1. Create a test repo with some test code in main branch → a script
+2. Commit some code and files to make several commit histories. In this case, some files would be defined as "exclude contents" in sync.conf → would be a script
+3. Create sync.conf defining "exclude contents" → could you create one that works for this test scenario
+4. Create a dummy 3rd party repo → would be a script
+5. Run `init-replica.sh` to create replica in `publish` branch, which is expected to make a PR on own internal repo
+6. Review PR to check if commit records are squashed and "exclude contents" are excluded → I will merge PR once reviewed
+7. Commit some code and files to simulate continuous development making commit histories and adding files to be excluded for "delivery" → would be a script that I can run multiple times to populate more commit histories and files as needed
+8. Run `stage-publish.sh` to make a PR to update "publish branch"
+9. Review PR to check → I will merge PR once reviewed
+10. Create a 3rd party repo on GitHub as one of my repositories for this test. `pr-to-internal.yml` should be installed → script to do
+11. (Delivery with git-push) Run `deliver-to-replica.sh` to push the current snapshot of "publish branch" to the 3rd party repo created in step 10
+12. I review the content in the 3rd party repo → script to check if contents match with one on "publish branch" in own internal repo
+13. I review tags for "publish branch" in own internal repo → nice if a script to show the records with gh command
+14. Create another 3rd party repo on GitHub as one of my repositories for this test, which is separate from the one created in step 10. This repo will simulate "sync with files" method → the same script as step 10 with the repo name specified
+14. (Delivery with files) Run `deliver-to-replica.sh` to create a set of "delivery" files
+15. (On 3rd party repo) Apply the "delivery" files to the 3rd party repo created in step 14 and then I review main branch
+16. I review tags for "publish branch" in own internal repo in the same way as step 13
+17. (On 1st 3rd party repo) Create new development branch named "dev" branching off main branch that the published content is available → script to do this with the repo specified
+18. (On 2nd 3rd party repo) Do the same thing for 2nd 3rd party → the same script to do with the repo specified
+19. (On 1st 3rd party repo) Create some commits on the repo → script to do with the repo specified
+20. (On 2nd 3rd party repo) Create some commits on the repo → script to do with the repo specified
+21. (On 1st 3rd party repo) Create PR to main branch on the 3rd party repo → script with gh command or manual on GitHub console
+22. (On 1st 3rd party repo) Check if artifact is created with `pr-to-internal.yml` on PR created
+23. On own internal repo, the artifact generated in step 22 is converted to PR with `apply-external-pr.sh` and I review it
+24. On own internal repo, cherry-pick of the 3rd party PR with `cherry-pick-partial.sh`
+25. Create notification for external PR with `notify-external-pr.sh`
+
+---
+
 ## 元のシナリオからの変更点
 
 以下の点が元のシナリオと異なる（実装仕様に合わせて修正）:
 
 | 元のシナリオ | 修正後 |
 |---|---|
-| Step 4「dummy 3rd party repo を作成」 | 削除。3rd party repo は Step 9/14 で作成する |
-| Step 5「init-replica.sh でレプリカ作成」 | `init-replica.sh` は publish ブランチ初期化のみ。3rd party への配送は `deliver-to-replica.sh` が担う |
-| Step 14 が重複 | 2番目の Step 14 以降を繰り下げ（Step 15〜26 に再番号） |
-| Step 10/14 後に party.conf 作成が抜けていた | `04-create-party-repo.sh` が party.conf を自動生成する |
-| Step 22-23 の間に artifact ダウンロードが抜けていた | Step 22 として `10-download-artifact.sh` を追加 |
+| Step 4「dummy 3rd party repo を作成」 | 削除。3rd party repo は Steps 10/14 で作成する |
+| Step 5「`init-replica.sh` でレプリカ作成」 | `init-replica.sh` は publish ブランチ初期化のみ。3rd party への配送は `deliver-to-replica.sh` が担う |
+| Step 14 が重複 | 2番目の Step 14 以降を繰り下げ（Step 15〜25 に再番号） |
+| Steps 10/14 後に party.conf 作成が抜けていた | `04-create-party-repo.sh` が party.conf を自動生成する |
+| Steps 22-23 の間に artifact ダウンロードが抜けていた | Step 22 として `10-download-artifact.sh` を追加 |
 
 ---
 
