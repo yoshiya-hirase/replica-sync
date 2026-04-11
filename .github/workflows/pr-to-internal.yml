@@ -21,6 +21,8 @@ on:
 jobs:
   generate-patch:
     runs-on: ubuntu-latest
+    # sync/* branches are internal delivery PRs — skip them
+    if: ${{ !startsWith(github.head_ref, 'sync/') }}
     permissions:
       pull-requests: read
       contents: read
