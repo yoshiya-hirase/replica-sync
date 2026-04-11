@@ -568,18 +568,52 @@ patch ファイルからパス指定で適用する場合:
 
 ### C-4. 採否通知 (`notify-external-pr.sh`)
 
+採否結果を外部 PR にコメントで通知する。配送方法に応じて 2 つの出力モードがある。
+
+#### push モード（デフォルト）
+
+社内から直接 `gh pr comment` を実行する。`REPLICA_GH_REPO` へのアクセス権が必要。
+
 ```bash
 # 全部採用
-./notify-external-pr.sh --party acme --meta pr-123-meta.json --status accepted
+./scripts/notify-external-pr.sh --party acme --meta pr-123-meta.json --status accepted
 
 # 一部採用
-./notify-external-pr.sh --party acme --meta pr-123-meta.json --status partial
+./scripts/notify-external-pr.sh --party acme --meta pr-123-meta.json --status partial
 
 # 却下
-./notify-external-pr.sh --party acme --meta pr-123-meta.json \
+./scripts/notify-external-pr.sh --party acme --meta pr-123-meta.json \
   --status rejected \
   --reason "設計方針と不一致"
 ```
+
+#### patch モード（レプリカリポジトリへの直接アクセスが不可の場合）
+
+通知パッケージ（スクリプト + メタ）を生成して 3rd party に送付する。
+3rd party が自分のマシンで実行することで PR にコメントが投稿される。
+
+```bash
+./scripts/notify-external-pr.sh --party galaxy --meta pr-123-meta.json \
+  --status accepted \
+  --output patch
+```
+
+生成されるファイル:
+
+| ファイル | 内容 |
+|---|---|
+| `notify-TIMESTAMP-meta.json` | PR 番号・コメント本文・close フラグ・リポジトリ名 |
+| `notify-TIMESTAMP.sh` | 3rd party が実行するスタンドアロンスクリプト |
+
+3rd party 側の実行コマンド（`gh` CLI と `jq` が必要）:
+
+```bash
+./notify-TIMESTAMP.sh
+```
+
+出力先ディレクトリは `sync.conf` の `NOTIFY_OUTPUT_DIR`（デフォルト: `./sync-patches`）で設定できる。
+
+#### 共通の動作
 
 `rejected` の場合は外部 PR を自動的に Close する。
 `accepted` / `partial` の場合は次回 milestone sync まで外部 PR をオープンのまま維持し、sync 後に手動で Close する。

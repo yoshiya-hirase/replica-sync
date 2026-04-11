@@ -370,6 +370,8 @@ git checkout main
 
 #### Step 24: 外部 PR に通知
 
+**push モード（acme: push で同期している party）:**
+
 ```bash
 # 部分採用の場合
 ./scripts/notify-external-pr.sh \
@@ -385,8 +387,22 @@ git checkout main
   --reason "acme-extensions does not fit the design direction"
 ```
 
+**patch モード（galaxy: patch で同期している party）:**
+
+```bash
+./scripts/notify-external-pr.sh \
+  --party galaxy \
+  --meta  test-artifacts/galaxy/pr-<N>/pr-meta.json \
+  --status accepted \
+  --output patch
+```
+
+`sync-patches/` に `notify-TIMESTAMP.sh` と `notify-TIMESTAMP-meta.json` が生成される。
+この 2 ファイルを galaxy に送付し、galaxy 側で `./notify-TIMESTAMP.sh` を実行してもらう。
+
 **確認ポイント:**
-- 外部 PR にコメントが投稿されていること
+- push モード: 外部 PR にコメントが直接投稿されていること
+- patch モード: 通知パッケージが生成されること / 3rd party が実行するとコメントが投稿されること
 - `rejected` の場合、外部 PR が自動 Close されること
 
 ---
