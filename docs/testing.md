@@ -48,6 +48,7 @@
 | Step 14 が重複 | 2番目の Step 14 以降を繰り下げ（Step 15〜25 に再番号） |
 | Steps 10/14 後に party.conf 作成が抜けていた | `04-create-party-repo.sh` が party.conf を自動生成する |
 | Steps 22-23 の間に artifact ダウンロードが抜けていた | Step 22 として `10-download-artifact.sh` を追加 |
+| 元 Step 15「patch モード配送後に last-sync タグを手動更新」 | patch モードでもパッチセット生成時に自動でタグを進めるよう変更。手動ステップを削除し Steps 16〜25 を 15〜24 に繰り上げ |
 
 ---
 
@@ -276,19 +277,7 @@ bash <path-to-apply.sh>
 
 PR モードの場合、GitHub 上に PR が作成される。マージ後に続ける。
 
-#### Step 15: last-sync タグを手動更新
-
-patch モードでは配送確認後に手動でタグを更新する:
-
-```bash
-# apply.sh 出力の末尾に表示されたコマンドを実行
-cd <TEST_DIR>/internal
-PUBLISH_HEAD=$(git rev-parse publish)
-git tag -a -f replica/beta/last-sync "$PUBLISH_HEAD" \
-  -m "delivered: $(date +%Y%m%d-%H%M%S)"
-```
-
-#### Step 16: 配送内容を検証 & タグ確認
+#### Step 15: 配送内容を検証 & タグ確認
 
 ```bash
 ./test/05-verify-delivery.sh --party beta
@@ -299,14 +288,14 @@ git tag -a -f replica/beta/last-sync "$PUBLISH_HEAD" \
 
 ### Phase 6: 外部 PR フロー
 
-#### Step 17: 3rd party dev ブランチを作成
+#### Step 16: 3rd party dev ブランチを作成
 
 ```bash
 # acme party の dev ブランチを作成
 ./test/07-setup-3rdparty-branch.sh --party acme --branch dev
 ```
 
-#### Step 18: 3rd party に開発コミットを追加
+#### Step 17: 3rd party に開発コミットを追加
 
 ```bash
 ./test/08-add-3rdparty-commits.sh --party acme --branch dev
@@ -317,7 +306,7 @@ git tag -a -f replica/beta/last-sync "$PUBLISH_HEAD" \
 - `services/common/Utils.kt` — 部分的に採用しやすい変更
 - `services/acme-extensions/` — 採用しにくい party 固有の変更
 
-#### Step 19: 3rd party から PR を作成
+#### Step 18: 3rd party から PR を作成
 
 ```bash
 ./test/09-create-3rdparty-pr.sh --party acme --branch dev
@@ -325,7 +314,7 @@ git tag -a -f replica/beta/last-sync "$PUBLISH_HEAD" \
 
 PR 作成後、`pr-to-internal.yml` CI が自動実行される。
 
-#### Step 20 (手動): CI の完了を確認
+#### Step 19 (手動): CI の完了を確認
 
 ```bash
 gh run list --repo <GITHUB_USER>/test-replica-acme --workflow pr-to-internal.yml
@@ -333,7 +322,7 @@ gh run list --repo <GITHUB_USER>/test-replica-acme --workflow pr-to-internal.yml
 
 ステータスが `completed / success` になるまで待つ（通常 1〜2 分）。
 
-#### Step 21: artifact をダウンロード
+#### Step 20: artifact をダウンロード
 
 ```bash
 ./test/10-download-artifact.sh --party acme --pr <PR_NUMBER>
@@ -341,7 +330,7 @@ gh run list --repo <GITHUB_USER>/test-replica-acme --workflow pr-to-internal.yml
 
 `test-artifacts/acme/pr-<N>/` に `pr.patch` と `pr-meta.json` が保存される。
 
-#### Step 22: 内部リポジトリに PR を作成
+#### Step 21: 内部リポジトリに PR を作成
 
 ```bash
 ./scripts/apply-external-pr.sh \
@@ -354,11 +343,11 @@ gh run list --repo <GITHUB_USER>/test-replica-acme --workflow pr-to-internal.yml
 - GHE（GitHub）上に内部 PR が作成される
 - PR に外部 PR URL・外部 author が記録されていること
 
-#### Step 23 (手動): 内部 PR をレビュー
+#### Step 22 (手動): 内部 PR をレビュー
 
 内部 PR を確認し、採用するパスを決める。
 
-#### Step 24: cherry-pick-partial.sh で部分採用
+#### Step 23: cherry-pick-partial.sh で部分採用
 
 ```bash
 cd <TEST_DIR>/internal
@@ -376,7 +365,7 @@ git checkout main
 - `services/api/ExternalFeatureN.kt` のみ main に取り込まれていること
 - `services/acme-extensions/` は含まれていないこと
 
-#### Step 25: 外部 PR に通知
+#### Step 24: 外部 PR に通知
 
 ```bash
 # 部分採用の場合
