@@ -85,10 +85,11 @@ git commit -m "feat(${PARTY}): extend Utils with formatExternal"
 # ── Change 3: new directory (may or may not be accepted) ──────
 mkdir -p "services/${PARTY}-extensions"
 
+PARTY_CAP=$(echo "${PARTY}" | awk '{print toupper(substr($0,1,1)) substr($0,2)}')
 cat > "services/${PARTY}-extensions/Extension${COUNT}.kt" << EOF
 // Extension${COUNT}.kt - ${PARTY} specific extension
 // This is a party-specific service that may not fit the internal design.
-object ${PARTY^}Extension${COUNT} {
+object ${PARTY_CAP}Extension${COUNT} {
     const val PARTY_NAME = "${PARTY}"
     fun describe(): String = "${PARTY} extension v${COUNT}"
 }
