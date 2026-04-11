@@ -1,17 +1,17 @@
 name: Sync to Replica
 
-# GHE 側の GitHub Actions。
-# milestone/* タグ（例: milestone/2024-Q1）の push をトリガーに
-# sync-to-replica.sh を自動実行する。
+# GitHub Actions on the GHE side.
+# Automatically runs sync-to-replica.sh triggered by pushes of milestone/* tags
+# (e.g. milestone/2024-Q1).
 #
-# Secrets に以下を登録すること:
-#   GHE_TOKEN          : GHE の Personal Access Token（タグ push 権限）
-#   GITHUB_COM_DEPLOY_KEY : github.com レプリカへの write 権限を持つ SSH Deploy Key
+# Register the following in Secrets:
+#   GHE_TOKEN             : GHE Personal Access Token (tag push permission)
+#   GITHUB_COM_DEPLOY_KEY : SSH Deploy Key with write access to the github.com replica
 
 on:
   push:
     tags:
-      - 'milestone/*'   # milestone/2024-Q1 のようなタグをトリガーに
+      - 'milestone/*'   # triggered by tags like milestone/2024-Q1
 
 jobs:
   sync:
@@ -20,7 +20,7 @@ jobs:
       - name: Checkout internal monorepo
         uses: actions/checkout@v4
         with:
-          fetch-depth: 0    # タグ・全履歴が必要
+          fetch-depth: 0    # full history and tags required
           token: ${{ secrets.GHE_TOKEN }}
 
       - name: Setup github.com SSH Deploy Key

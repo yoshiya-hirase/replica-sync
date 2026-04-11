@@ -1,157 +1,157 @@
-# Monorepo レプリカ管理 オペレーションガイド
+# Monorepo Replica Management — Operations Guide
 
-## 全体構成
+## System Overview
 
 ```
-GitHub Enterprise (社内)                         github.com (社外レプリカ)
+GitHub Enterprise (internal)                     github.com (external replica)
 ────────────────────────────────────             ─────────────────────────
 github.your-company.com                          github.com
   └── org/internal-monorepo                        └── your-org/replica
         │                                                │
-        │  [A] publish ブランチ初期化                     ├── main   ← 同期先
-        │      init-replica.sh                           └── 3rdparty/foo  ← 3rd party 開発
+        │  [A] publish branch initialization             ├── main   ← sync target
+        │      init-replica.sh                           └── 3rdparty/foo  ← 3rd party dev
         │        → GHE PR: init/TIMESTAMP → publish
-        │        → [社内レビュー・マージ]
-        │        → publish に初期スナップショット反映
+        │        → [internal review & merge]
+        │        → initial snapshot reflected to publish
         │
-        │  [B] マイルストーン同期（2フェーズ）
+        │  [B] Milestone sync (2 phases)
         │
-        │  フェーズ1: stage-publish.sh
+        │  Phase 1: stage-publish.sh
         │    internal/main
-        │      → squash + EXCLUDE_PATHS 除外
+        │      → squash + EXCLUDE_PATHS filter
         │      → GHE PR: sync/TIMESTAMP → publish
-        │      → [社内レビュー・マージ]
-        │      → publish に反映
+        │      → [internal review & merge]
+        │      → reflected to publish
         │
-        │  フェーズ2: deliver-to-replica.sh    ──────────────────────►
-        │    publish                                  external/main に反映
+        │  Phase 2: deliver-to-replica.sh    ──────────────────────►
+        │    publish                                  reflected to external/main
         │      → push (pr/direct)
-        │         または patch + apply.sh 出力
+        │         or patch + apply.sh output
         │
-        │  [C] 外部PR取り込み                  ◄──────────────────────
+        │  [C] External PR incorporation     ◄──────────────────────
         │
-  タグ (すべて internal-monorepo に保持)
-    publish/init-TIMESTAMP              ← publish ブランチ初回作成の記録（party 非依存）
-    replica/<party>/init-TIMESTAMP      ← 各 party への初回配送記録
-    replica/<party>/last-sync           ← 最後に配送した publish HEAD（可動・party ごと）
-    replica/<party>/sync-TIMESTAMP      ← 各配送の不変記録
-    milestone/YYYY-QN                   ← マイルストーン基点
+  Tags (all kept in internal-monorepo)
+    publish/init-TIMESTAMP              ← record of publish branch first creation (party-independent)
+    replica/<party>/init-TIMESTAMP      ← record of first delivery to each party
+    replica/<party>/last-sync           ← last delivered publish HEAD (moving, per-party)
+    replica/<party>/sync-TIMESTAMP      ← immutable record of each delivery
+    milestone/YYYY-QN                   ← milestone anchor
 ```
 
 ---
 
-## 登場スクリプト一覧
+## Scripts Reference
 
-| スクリプト | 実行環境 | 用途 |
+| Script | Environment | Purpose |
 |---|---|---|
-| `init-replica.sh` | 社内 | publish ブランチ初期化（GHE PR フロー） |
-| `stage-publish.sh` | 社内 | マイルストーン同期 フェーズ1: squash して GHE PR 作成 |
-| `deliver-to-replica.sh` | 社内 | マイルストーン同期 フェーズ2: publish ブランチから外部へ配送 |
-| `sync-to-replica.sh` | 社内 | マイルストーン同期（旧方式・後方互換用） |
-| `pr-to-internal.yml` | github.com CI | 外部PR差分生成 |
-| `apply-external-pr.sh` | 社内 | 外部PRの社内適用・PR作成 |
-| `cherry-pick-partial.sh` | 社内 | 外部PR変更の部分採用 |
-| `notify-external-pr.sh` | 社内 | 外部PRへの採否通知 |
+| `init-replica.sh` | Internal | Initialize publish branch (GHE PR flow) |
+| `stage-publish.sh` | Internal | Milestone sync Phase 1: squash and create GHE PR |
+| `deliver-to-replica.sh` | Internal | Milestone sync Phase 2: deliver from publish branch to external |
+| `sync-to-replica.sh` | Internal | Milestone sync (legacy; for backward compatibility) |
+| `pr-to-internal.yml` | github.com CI | Generate external PR diff |
+| `apply-external-pr.sh` | Internal | Apply external PR and create internal PR |
+| `cherry-pick-partial.sh` | Internal | Selectively incorporate external PR changes |
+| `notify-external-pr.sh` | Internal | Notify external PR of acceptance decision |
 
 ---
 
-## 設定ファイル
+## Config Files
 
-### `config/sync.conf`（共通設定）
+### `config/sync.conf` (shared config)
 
-全スクリプトは `config/sync.conf` を `source` して動作する。
-`config/sync.conf.example` をコピーして環境に合わせて編集する。
+All scripts operate by `source`-ing `config/sync.conf`.
+Copy `config/sync.conf.example` and edit it for your environment.
 
 ```bash
 cp config/sync.conf.example config/sync.conf
 $EDITOR config/sync.conf
 ```
 
-### `config/party/<party>.conf`（party ごとの設定）
+### `config/party/<party>.conf` (per-party config)
 
-レプリカへの接続情報（`REPLICA_*`）は party ごとに異なるため、
-`config/party/<party>.conf` として分離する。
+Replica connection details (`REPLICA_*`) differ per party,
+so they are separated into `config/party/<party>.conf`.
 
 ```bash
 cp config/party/party.conf.example config/party/acme.conf
 $EDITOR config/party/acme.conf
 ```
 
-`deliver-to-replica.sh` は `--party acme` が渡されると `config/party/acme.conf` を自動的に `source` する。
+`deliver-to-replica.sh` automatically `source`s `config/party/acme.conf` when `--party acme` is passed.
 
-`sync.conf` および `config/party/*.conf` は `.gitignore` 済みであり、リポジトリにはコミットされない。
+`sync.conf` and `config/party/*.conf` are `.gitignore`d and are not committed to the repository.
 
-### 設定項目一覧
+### Config Variables Reference
 
-列はオペレーションのフェーズに対応する。
+Columns correspond to operation phases.
 
-| 凡例 | 意味 |
+| Legend | Meaning |
 |---|---|
-| **必須** | そのフェーズでスクリプトが参照する |
-| 注記付き | 一部のモードまたは条件でのみ必要 |
-| ― | そのフェーズでは参照しない |
+| **Required** | The script references this variable in that phase |
+| With note | Required only in certain modes or conditions |
+| ― | Not referenced in that phase |
 
-列の対応スクリプト:
+Column-to-script mapping:
 
-| 列 | スクリプト |
+| Column | Script |
 |---|---|
 | `[A] init` | `init-replica.sh` |
 | `[B-1] stage` | `stage-publish.sh` |
 | `[B-2] deliver` | `deliver-to-replica.sh` |
 | `[C] external` | `apply-external-pr.sh` / `cherry-pick-partial.sh` / `notify-external-pr.sh` |
 
-#### `config/sync.conf` — 社内リポジトリ (GHE)
+#### `config/sync.conf` — Internal Repository (GHE)
 
-| 変数 | 説明 | `[A] init` | `[B-1] stage` | `[B-2] deliver` | `[C] external` | 例 |
+| Variable | Description | `[A] init` | `[B-1] stage` | `[B-2] deliver` | `[C] external` | Example |
 |---|---|:---:|:---:|:---:|:---:|---|
-| `INTERNAL_REPO` | 社内 monorepo のローカルパス（絶対パス） | **必須** | **必須** | **必須** | apply/cherry-pick のみ | `/path/to/internal-monorepo` |
-| `INTERNAL_REMOTE` | GHE の remote 名 | **必須** | **必須** | ― | apply/cherry-pick のみ | `origin` |
-| `GH_HOST` | GHE のホスト名（`gh` CLI の `GH_HOST` に使用） | **必須** | **必須** | ― | apply のみ | `github.your-company.com` |
-| `GH_ORG` | GHE の Organization 名 | **必須** | **必須** | ― | apply のみ | `org` |
-| `GH_REPO` | GHE のリポジトリ名 | **必須** | **必須** | ― | apply のみ | `internal` |
+| `INTERNAL_REPO` | Local path to internal monorepo (absolute) | **Required** | **Required** | **Required** | apply/cherry-pick only | `/path/to/internal-monorepo` |
+| `INTERNAL_REMOTE` | GHE remote name | **Required** | **Required** | ― | apply/cherry-pick only | `origin` |
+| `GH_HOST` | GHE hostname (used as `GH_HOST` for `gh` CLI) | **Required** | **Required** | ― | apply only | `github.your-company.com` |
+| `GH_ORG` | GHE organization name | **Required** | **Required** | ― | apply only | `org` |
+| `GH_REPO` | GHE repository name | **Required** | **Required** | ― | apply only | `internal` |
 
-#### `config/sync.conf` — 同期設定
+#### `config/sync.conf` — Sync Settings
 
-| 変数 | 説明 | `[A] init` | `[B-1] stage` | `[B-2] deliver` | `[C] external` | 備考 |
+| Variable | Description | `[A] init` | `[B-1] stage` | `[B-2] deliver` | `[C] external` | Notes |
 |---|---|:---:|:---:|:---:|:---:|---|
-| `SYNC_AUTHOR_NAME` | コミット・タグの author 名 | **必須** | **必須** | push のみ | apply/cherry-pick のみ | 社内開発者名を外部に出さないための Bot 名 |
-| `SYNC_AUTHOR_EMAIL` | コミット・タグの author メールアドレス | **必須** | **必須** | push のみ | apply/cherry-pick のみ | 同上 |
-| `EXCLUDE_PATHS` | レプリカへの同期から除外するパスの配列 | **必須** | **必須** | ― | ― | `init` / `stage-publish` で適用済みのため deliver では不要 |
-| `PATCH_OUTPUT_DIR` | `--output patch` 時の出力先ディレクトリ | ― | ― | patch のみ | ― | 未設定時は `./sync-patches` |
+| `SYNC_AUTHOR_NAME` | Author name for commits and tags | **Required** | **Required** | push only | apply/cherry-pick only | Bot name to avoid exposing internal developer names externally |
+| `SYNC_AUTHOR_EMAIL` | Author email for commits and tags | **Required** | **Required** | push only | apply/cherry-pick only | Same as above |
+| `EXCLUDE_PATHS` | Array of paths to exclude from replica sync | **Required** | **Required** | ― | ― | Not needed for deliver since `init` / `stage-publish` already applied exclusions |
+| `PATCH_OUTPUT_DIR` | Output directory when `--output patch` | ― | ― | patch only | ― | Defaults to `./sync-patches` if unset |
 
-`EXCLUDE_PATHS` の設定例:
+Example `EXCLUDE_PATHS` config:
 
 ```bash
 EXCLUDE_PATHS=(
-  "services/internal-only/"   # 社内のみのサービス
-  ".internal/"                # 社内設定ファイル
-  "scripts/internal/"         # 社内用スクリプト
+  "services/internal-only/"   # internal-only services
+  ".internal/"                # internal config files
+  "scripts/internal/"         # internal-only scripts
 )
 ```
 
-#### `config/party/<party>.conf` — レプリカリポジトリ (github.com)
+#### `config/party/<party>.conf` — Replica Repository (github.com)
 
-| 変数 | 説明 | `[A] init` | `[B-1] stage` | `[B-2] deliver` | `[C] external` | 例 |
+| Variable | Description | `[A] init` | `[B-1] stage` | `[B-2] deliver` | `[C] external` | Example |
 |---|---|:---:|:---:|:---:|:---:|---|
-| `REPLICA_REPO` | レプリカのローカルパス（絶対パス） | ― | ― | push のみ | ― | `/path/to/replica-acme` |
-| `REPLICA_REMOTE` | レプリカの remote 名 | ― | ― | push のみ | ― | `origin` |
-| `REPLICA_BRANCH` | レプリカの同期先ブランチ | ― | ― | push のみ | ― | `main` |
-| `REPLICA_GH_REPO` | github.com の `組織名/リポジトリ名` | ― | ― | push かつ pr mode のみ | notify のみ | `your-org/replica-acme` |
+| `REPLICA_REPO` | Local path to replica (absolute) | ― | ― | push only | ― | `/path/to/replica-acme` |
+| `REPLICA_REMOTE` | Replica remote name | ― | ― | push only | ― | `origin` |
+| `REPLICA_BRANCH` | Replica sync target branch | ― | ― | push only | ― | `main` |
+| `REPLICA_GH_REPO` | github.com `org/repo` | ― | ― | push + pr mode only | notify only | `your-org/replica-acme` |
 
 ---
 
-## [A] publish ブランチ初期化
+## [A] publish Branch Initialization
 
-### 前提条件
+### Prerequisites
 
-- 社内 GHE に `org/internal-monorepo` が存在する
-- SSH 設定で GHE を使える（後述）
-- 開始タグ（`milestone/2024-Q1` など）が作成済み
+- `org/internal-monorepo` exists on internal GHE
+- GHE accessible via SSH (see below)
+- Start tag (e.g. `milestone/2024-Q1`) has been created
 
-### A-1. SSH 認証設定
+### A-1. SSH Authentication Setup
 
 ```bash
-# 鍵生成
+# Generate keys
 ssh-keygen -t ed25519 -f ~/.ssh/id_ed25519_ghe    -C "sync-bot@ghe"
 ssh-keygen -t ed25519 -f ~/.ssh/id_ed25519_github  -C "sync-bot@github"
 
@@ -166,50 +166,50 @@ Host github.com
   User git
   IdentityFile ~/.ssh/id_ed25519_github
 
-# 疎通確認
+# Verify connectivity
 ssh -T ghe
 ssh -T github.com
 ```
 
-各インスタンスに公開鍵を登録する。
-github.com 側はレプリカへの書き込みのみを許可する Deploy Key として登録することを推奨する。
+Register the public keys to each instance.
+For github.com, it is recommended to register as a Deploy Key with write-only access to the replica.
 
-### A-2. publish ブランチ作成
+### A-2. Create publish Branch
 
-`init-replica.sh` は `git archive` でファイルツリーのスナップショットを取り出し（`EXCLUDE_PATHS` 適用済み）、
-GHE 上に PR を作成する。PR をレビュー・マージすることで `publish` ブランチが初期化される。
+`init-replica.sh` extracts a file tree snapshot using `git archive` (with `EXCLUDE_PATHS` applied)
+and creates a PR on GHE. Review and merge the PR to initialize the `publish` branch.
 
 ```bash
 ./scripts/init-replica.sh milestone/2024-Q1
 
-# タグにメモを付与する場合
-./scripts/init-replica.sh --message "3rd party 協業開始" milestone/2024-Q1
+# With a tag message
+./scripts/init-replica.sh --message "Start 3rd party collaboration" milestone/2024-Q1
 ```
 
-**引数 `START_TAG` はタグ名でなければならない。** ブランチ名を渡すとエラーになる。
+**The `START_TAG` argument must be a tag name.** Passing a branch name will cause an error:
 
 ```
 [ err ] 'main' is not a tag. Specify a tag (e.g. milestone/v1), not a branch.
 ```
 
-ブランチ名を拒否する理由: ブランチは可動なため、同じコマンドを翌日実行すると別のスナップショットが取られてしまう。
-`publish/init-TIMESTAMP` タグに「どの時点のスナップショットか」を確定的に記録するためには、
-不変のタグを指定する必要がある。
+Why branch names are rejected: branches are moving, so running the same command the next day would capture a different snapshot.
+An immutable tag must be specified to definitively record "which point in time the snapshot was taken"
+in the `publish/init-TIMESTAMP` tag.
 
-スクリプトが行うこと:
+What the script does:
 
 ```
-1. git archive で START_TAG 時点のファイルツリーを展開（コミット履歴を含まない）
-2. EXCLUDE_PATHS を除外
-3. publish ブランチを空のベースコミットで作成
-4. init/TIMESTAMP ブランチにスナップショット内容をコミット（author=Bot）
-5. GHE に push し PR 作成: init/TIMESTAMP → publish
-6. publish/init-TIMESTAMP タグを START_TAG に設定
+1. Expand file tree at START_TAG using git archive (no commit history)
+2. Filter out EXCLUDE_PATHS
+3. Create publish branch with an empty base commit
+4. Commit snapshot content to init/TIMESTAMP branch (author=Bot)
+5. Push to GHE and create PR: init/TIMESTAMP → publish
+6. Set publish/init-TIMESTAMP tag to START_TAG
 ```
 
-**git の hint メッセージについて:**
+**About git hint messages:**
 
-実行時に以下の hint が表示されることがある:
+The following hint may appear during execution:
 
 ```
 hint: You have created a nested tag. The object referred to by your new tag is
@@ -217,188 +217,183 @@ hint: already a tag. If you meant to tag the object that it points to, use:
 hint:   git tag -f publish/init-TIMESTAMP milestone/v1^{}
 ```
 
-これはエラーでも警告でもなく、動作に問題はない。
+This is not an error or warning; it does not affect operation.
 
-発生する理由: `publish/init-TIMESTAMP` タグが `milestone/v1` という別のタグオブジェクトを指す
-（タグがタグを指す = nested tag）ため、git が「コミットを直接指すつもりなら `^{}` を使え」と
-アドバイスしている。今回は「どのマイルストーンタグから開始したか」を記録する意図があるため、
-タグオブジェクトを指すのは正しい設計であり、hint は無視してよい。
+Why it occurs: the `publish/init-TIMESTAMP` tag points to another tag object `milestone/v1`
+(tag pointing to tag = nested tag), so git advises "use `^{}` if you want to point to the commit directly".
+In this case, the intent is to record "which milestone tag we started from",
+so pointing to the tag object is the correct design — the hint can be ignored.
 
-気になる場合は以下で抑制できる:
+To suppress it if desired:
 
 ```bash
 git config set advice.nestedTag false
 ```
 
-実行後の状態:
+State after execution:
 
 ```
-内部 monorepo
+Internal monorepo
 A - B - C - D - E        (main)
                 ↑
           milestone/2024-Q1
-          publish/init-TIMESTAMP   ← スナップショット元の記録
+          publish/init-TIMESTAMP   ← record of snapshot source
 
-publish: [empty] ← init/TIMESTAMP (PR レビュー待ち)
+publish: [empty] ← init/TIMESTAMP (awaiting PR review)
 ```
 
-PR をマージすると:
+After merging the PR:
 
 ```
 publish: [empty base] ─ [snapshot commit]
                                 ↑ HEAD
 ```
 
-### A-3. 3rd party への初回配送
+### A-3. First Delivery to 3rd Party
 
-PR マージ後、3rd party ごとに `deliver-to-replica.sh` を実行する。
-初回配送時は `last-sync` タグがないため、`publish` の最初のコミットから全量を配送する。
+After the PR is merged, run `deliver-to-replica.sh` for each 3rd party.
+On first delivery, there is no `last-sync` tag, so the entire content from the first commit of `publish` is delivered.
 
 ```bash
-# push モード（直接 git push）
+# push mode (direct git push)
 ./scripts/deliver-to-replica.sh --party acme "initial: 2024-Q1"
 
-# patch モード（ファイルで受け渡し）
+# patch mode (file-based handoff)
 ./scripts/deliver-to-replica.sh --party acme --output patch "initial: 2024-Q1"
 ```
 
-初回配送完了後に以下のタグが作成される:
+After the first delivery completes, the following tags are created:
 
 ```
-replica/acme/init-TIMESTAMP  ← この party への初回配送記録（不変）
-replica/acme/last-sync       ← 配送完了点（可動）
-replica/acme/sync-TIMESTAMP  ← 配送の不変記録
+replica/acme/init-TIMESTAMP  ← record of first delivery to this party (immutable)
+replica/acme/last-sync       ← delivery completion point (moving)
+replica/acme/sync-TIMESTAMP  ← immutable record of the delivery
 ```
 
 ---
 
-## [B] マイルストーン同期
+## [B] Milestone Sync
 
-### 概要
+### Overview
 
-マイルストーン同期は2フェーズで行う。
+Milestone sync is performed in 2 phases.
 
 ```
-[フェーズ1: stage-publish.sh]
+[Phase 1: stage-publish.sh]
   internal/main
-    → squash + EXCLUDE_PATHS 除外
+    → squash + EXCLUDE_PATHS filter
     → GHE PR: sync/TIMESTAMP → publish
-    → [社内レビュー・承認・マージ]
-    → publish に squash コミットが積まれる
+    → [internal review & approval & merge]
+    → squash commit accumulated on publish
 
-[フェーズ2: deliver-to-replica.sh]
+[Phase 2: deliver-to-replica.sh]
   publish
     → push (--mode pr/direct)
-       または
-       patch + apply.sh 出力
-    → external/main に反映
-    → replica/<party>/last-sync タグを publish HEAD に更新
+       or
+       patch + apply.sh output
+    → reflected to external/main
+    → replica/<party>/last-sync tag updated to publish HEAD
 ```
 
-`publish` ブランチは社内 GHE にのみ存在し、外部には push しない。
-全 party に共通の「社外に送った内容」の正本として機能する。
-各 party の配送完了位置は `replica/<party>/last-sync` タグで独立して管理する。
+The `publish` branch exists only on internal GHE and is never pushed externally.
+It serves as the authoritative record of "what was sent externally", shared across all parties.
 
-### B-1. ブランチとタグの役割
+Each party's delivery completion position is managed independently via the `replica/<party>/last-sync` tag.
+
+### B-1. Branch and Tag Roles
 
 ```
-内部 monorepo (GHE)
+Internal monorepo (GHE)
 
 main:     A - B - C - D - E - F - G
                                    ↑ INTERNAL_HEAD
 
 publish:  P1 ── P2 ── P3
           ↑            ↑
-    (START_TAG)   squash コミット（Bot author）
+    (START_TAG)   squash commit (Bot author)
                        ↑
-              replica/acme/last-sync  ← acme の配送完了点（可動）
-              replica/beta/last-sync  ← beta の配送完了点（可動・別 party の例）
+              replica/acme/last-sync  ← acme delivery completion point (moving)
+              replica/beta/last-sync  ← beta delivery completion point (moving, separate party)
 
-sync/TIMESTAMP: P3 ─ (マージ前の PR ブランチ)
+sync/TIMESTAMP: P3 ─ (PR branch before merge)
 ```
 
-| 名前 | 種別 | 役割 |
+| Name | Type | Role |
 |---|---|---|
-| `publish` | ブランチ | squash 済みの配送正本（全 party 共有）。社内でレビュー可能 |
-| `replica/<party>/last-sync` | 可動タグ | `publish` ブランチ上の最後に配送したコミットを指す（party ごと独立） |
-| `publish/init-TIMESTAMP` | 不変タグ | publish ブランチ初回作成の記録（party 非依存） |
-| `replica/<party>/init-TIMESTAMP` | 不変タグ | 各 party への初回配送記録 |
-| `replica/<party>/sync-TIMESTAMP` | 不変タグ | 各配送の不変記録 |
+| `publish` | Branch | Authoritative squashed content for delivery (shared across all parties). Reviewable internally |
+| `replica/<party>/last-sync` | Moving tag | Points to the last delivered commit on the `publish` branch (independent per party) |
+| `publish/init-TIMESTAMP` | Immutable tag | Record of publish branch first creation (party-independent) |
+| `replica/<party>/init-TIMESTAMP` | Immutable tag | Record of first delivery to each party |
+| `replica/<party>/sync-TIMESTAMP` | Immutable tag | Immutable record of each delivery |
 
-### B-2. フェーズ1: publish ブランチへのステージ (`stage-publish.sh`)
+### B-2. Phase 1: Stage to publish branch (`stage-publish.sh`)
 
-`internal/main` の差分を squash して `publish` への PR を GHE 上に作成する。
-`--party` 引数は不要。publish ブランチは party 非依存。
+Squash the diff from `internal/main` and create a PR to `publish` on GHE.
+No `--party` argument needed — the publish branch is party-independent.
 
 ```bash
 ./scripts/stage-publish.sh "sync: 2024-Q1"
 ```
 
-内部フロー:
+Internal flow:
 
 ```
-1. publish HEAD と internal/main HEAD の差分を取得
-2. EXCLUDE_PATHS を除外したパッチを生成
-3. worktree で sync/TIMESTAMP ブランチを publish から作成
-4. パッチを適用・squash commit (author=Bot)
-5. sync ブランチを GHE へ push
-6. GHE 上に PR 作成: sync/TIMESTAMP → publish
-   （PR 本文に含まれる内部コミット一覧を記載）
+1. Get diff between publish HEAD and internal/main HEAD
+2. Generate patch with EXCLUDE_PATHS filtered out
+3. Create sync/TIMESTAMP branch from publish in a worktree
+4. Apply patch and squash commit (author=Bot)
+5. Push sync branch to GHE
+6. Create PR on GHE: sync/TIMESTAMP → publish
+   (PR body includes list of internal commits)
 ```
 
-PR をレビュー・承認後に `publish` へマージする。
-**このフェーズでは `replica/<party>/last-sync` タグを更新しない。**
+Review and approve the PR, then merge to `publish`.
+**This phase does not update the `replica/<party>/last-sync` tag.**
 
-### B-3. フェーズ2: 外部レプリカへの配送 (`deliver-to-replica.sh`)
+### B-3. Phase 2: Deliver to External Replica (`deliver-to-replica.sh`)
 
-`publish` ブランチの内容を外部レプリカへ配送する。
-配送元は `replica/<party>/last-sync` から `publish` HEAD までの差分。
-`--output` で配送方法を、`--mode` で適用方法を指定する。
+Deliver the content of the `publish` branch to the external replica.
+The source is the diff from `replica/<party>/last-sync` to `publish` HEAD.
+Specify the delivery method with `--output` and the application method with `--mode`.
 
-| `--output` | `--mode` | 動作 | last-sync 更新 |
+| `--output` | `--mode` | Behavior | last-sync update |
 |---|---|---|---|
-| `push`（デフォルト） | `pr`（デフォルト） | sync ブランチを push して PR 作成 | 即時 |
-| `push` | `direct` | external `main` へ直接 push | 即時 |
-| `patch` | `pr`（デフォルト） | パッチセットと apply.sh を出力。3rd party が PR 作成 | 手動（適用確認後） |
-| `patch` | `direct` | パッチセットと apply.sh を出力。3rd party が直接適用 | 手動（適用確認後） |
+| `push` (default) | `pr` (default) | Push sync branch and create PR | Immediate |
+| `push` | `direct` | Push directly to external `main` | Immediate |
+| `patch` | `pr` (default) | Output patch set and apply.sh. 3rd party creates PR | Automatic at patch generation time |
+| `patch` | `direct` | Output patch set and apply.sh. 3rd party applies directly | Automatic at patch generation time |
 
 ```bash
-# PR として push（デフォルト）
+# Push as PR (default)
 ./scripts/deliver-to-replica.sh --party acme "sync: 2024-Q1"
 
-# main へ直接 push
+# Push directly to main
 ./scripts/deliver-to-replica.sh --party acme --mode direct "sync: 2024-Q1"
 
-# パッチセット出力（3rd party が PR を作成）
+# Output patch set (3rd party creates PR)
 ./scripts/deliver-to-replica.sh --party acme --output patch "sync: 2024-Q1"
 
-# パッチセット出力（3rd party が main へ直接適用）
+# Output patch set (3rd party applies directly to main)
 ./scripts/deliver-to-replica.sh --party acme --output patch --mode direct "sync: 2024-Q1"
 ```
 
-`--output patch` で生成されるファイル:
+Files generated by `--output patch`:
 
 ```
 sync-patches/
-├── sync-20240401-120000.patch       # 差分 patch（publish ブランチベース）
-├── sync-20240401-120000-meta.json   # メタ情報（PR タイトル・本文・配送範囲等）
-├── sync-20240401-120000-summary.txt # publish コミット一覧
-└── sync-20240401-120000-apply.sh    # 3rd party が実行するスタンドアロン適用スクリプト
+├── sync-20240401-120000.patch       # diff patch (publish branch-based)
+├── sync-20240401-120000-meta.json   # metadata (PR title, body, delivery range, etc.)
+├── sync-20240401-120000-summary.txt # publish commit list
+└── sync-20240401-120000-apply.sh    # standalone apply script for 3rd party to run
 ```
 
-`--output patch` では last-sync タグを即時更新しない。
-3rd party による適用確認後に以下を手動実行する。
+With `--output patch`, the last-sync tag is automatically updated at patch generation time.
 
-```bash
-cd /path/to/internal-monorepo
-git tag -a -f replica/<party>/last-sync <PUBLISH_HEAD> -m "delivered: TIMESTAMP"
-```
+### B-4. Managing Excluded Paths
 
-### B-4. 除外パスの管理
-
-`EXCLUDE_PATHS` は `init-replica.sh`（初期化）と `stage-publish.sh`（フェーズ1）でのみ適用される。
-`publish` ブランチは除外済みのクリーンな状態になるため、
-`deliver-to-replica.sh`（フェーズ2）では再除外しない。
+`EXCLUDE_PATHS` is applied only in `init-replica.sh` (initialization) and `stage-publish.sh` (Phase 1).
+Since the `publish` branch is already in a clean state with exclusions applied,
+`deliver-to-replica.sh` (Phase 2) does not re-apply exclusions.
 
 ```bash
 EXCLUDE_PATHS=(
@@ -408,189 +403,190 @@ EXCLUDE_PATHS=(
 )
 ```
 
-### B-5. 配送方法選択の指針
+### B-5. Delivery Method Selection Guide
 
 | | `push --mode pr` | `push --mode direct` | `patch --mode pr` | `patch --mode direct` |
 |---|---|---|---|---|
-| 社内レビュー（publish PR） | 両フローとも共通で可能 | ← | ← | ← |
-| 3rd party によるレビュー | 可能 | 不可 | 可能 | 不可 |
-| GHE → github.com の疎通 | 必要 | 必要 | 不要 | 不要 |
-| 3rd party に gh CLI が必要 | 不要 | 不要 | 必要 | 不要 |
-| 適したケース | 協調度が高い | 迅速に反映したい | 疎通不可・レビューあり | 疎通不可・直接適用 |
+| Internal review (publish PR) | Available in both flows | ← | ← | ← |
+| 3rd party review | Available | Not available | Available | Not available |
+| GHE → github.com connectivity | Required | Required | Not required | Not required |
+| 3rd party needs gh CLI | Not required | Not required | Required | Not required |
+| Best for | High-collaboration | Fast delivery | No connectivity + review | No connectivity + direct apply |
 
 ---
 
-## [C] 外部PR取り込み
+## [C] External PR Incorporation
 
-### 概要
+### Overview
 
-3rd party が github.com レプリカ上で `feature → main` の PR を作成する。
-この PR を社内でレビューし、必要なものだけ採用して GHE の内部 repo に取り込む。
-外部レプリカの `main` には直接マージしない。
+A 3rd party creates a `feature → main` PR on the github.com replica.
+Review this PR internally and incorporate only what is needed into the internal repo on GHE.
+Do not merge directly into the external replica's `main`.
 
 ```
-github.com (レプリカ)                GHE (内部)
-─────────────────────                ──────────
-3rd party が PR 作成
+github.com (replica)                 GHE (internal)
+─────────────────────                ──────────────
+3rd party creates PR
   feature/foo → main
         │
-        │ CI が patch と meta を生成
-        │ （Artifact としてアップロード）
+        │ CI generates patch and meta
+        │ (uploaded as Artifact)
         │
-        │ ファイルを社内に受け渡し
-        │                            apply-external-pr.sh を実行
-        │                              → external/<party>-pr-N ブランチ
-        │                              → 内部 PR を自動作成
-        │                              → 内部でレビュー
+        │ Hand files to internal team
+        │                            run apply-external-pr.sh
+        │                              → external/<party>-pr-N branch
+        │                              → auto-create internal PR
+        │                              → internal review
         │
-        │                            採用判断
-        │                              → cherry-pick で main に取り込み
+        │                            acceptance decision
+        │                              → cherry-pick into main
         │
-        │                            notify-external-pr.sh で結果通知
+        │                            notify result via notify-external-pr.sh
         ▼
-  外部 PR を Close（マージしない）
+Close external PR (do not merge)
         ↓
-  次回 milestone sync で変更が反映される
+Changes reflected on next milestone sync
 ```
 
-### C-1. 外部PR差分生成 (`pr-to-internal.yml`)
+### C-1. External PR Diff Generation (`pr-to-internal.yml`)
 
-github.com レプリカ側の GitHub Actions。
-3rd party が `main` へ PR を作成・更新した際に patch と meta を Artifact として保存する。
-Artifact を社内担当者がダウンロードし、次の apply スクリプトに渡す。
+GitHub Actions on the github.com replica side.
+Saves patch and meta as Artifacts when a 3rd party creates or updates a PR targeting `main`.
+Internal team members download the Artifact and pass it to the apply script.
 
-#### トリガー設計: `pull_request_target`
+#### Trigger Design: `pull_request_target`
 
-`pull_request` イベントでは `GITHUB_TOKEN` が PR API へのアクセス権を持たず、
-`gh pr diff` / `gh pr view` が HTTP 403 になる。
-そのため `pull_request_target` を使用する。
+With the `pull_request` event, `GITHUB_TOKEN` does not have access to the PR API,
+causing `gh pr diff` / `gh pr view` to return HTTP 403.
+Therefore `pull_request_target` is used.
 
-| 項目 | `pull_request` | `pull_request_target` |
+| Item | `pull_request` | `pull_request_target` |
 |---|---|---|
-| 実行コンテキスト | PR ヘッドのコード | ベースリポジトリ（`main`）のコード |
-| `GITHUB_TOKEN` の PR API アクセス | 不可（HTTP 403） | 可能 |
-| セキュリティリスク | 低い | PR ヘッドのコードを checkout すると高い |
+| Execution context | PR head code | Base repository (`main`) code |
+| `GITHUB_TOKEN` PR API access | Not available (HTTP 403) | Available |
+| Security risk | Low | High if PR head code is checked out |
 
-**本ワークフローは PR ヘッドを checkout しない**（diff は API 経由で取得）ため、
-`pull_request_target` を安全に使用できる。
+**This workflow does not check out the PR head** (diff is fetched via API),
+so `pull_request_target` can be used safely.
 
-#### `sync/*` ブランチのスキップ
+#### Skipping `sync/*` Branches
 
-`deliver-to-replica.sh` が作成するデリバリー PR のヘッドブランチは `sync/TIMESTAMP` 形式。
-これは社内からの同期配送であり、3rd party の開発変更ではないため、ジョブレベルの `if` 条件でスキップする。
+The delivery PR head branch created by `deliver-to-replica.sh` follows the `sync/TIMESTAMP` format.
+This is an internal sync delivery, not a 3rd party development change, so it is skipped via a job-level `if` condition.
 
 ```yaml
 if: ${{ !startsWith(github.head_ref, 'sync/') }}
 ```
 
-ワークフロー自体はトリガーされるが、ジョブが "skipped" となる。
+The workflow is triggered, but the job status becomes "skipped".
 
-#### 生成される Artifact
+#### Generated Artifact Contents
 
-| ファイル | 内容 |
+| File | Contents |
 |---|---|
-| `pr.patch` | PR の差分（`git apply` で適用可能な形式） |
-| `pr-meta.json` | PR 番号・タイトル・本文・author・URL・head SHA |
+| `pr.patch` | PR diff (applicable via `git apply`) |
+| `pr-meta.json` | PR number, title, body, author, URL, head SHA |
 
-Artifact 名: `pr-{PR番号}-{head SHA}`（保持期間: 30日）
+Artifact name: `pr-{PR number}-{head SHA}` (retention: 30 days)
 
-#### 複数回トリガーの動作（`synchronize` イベント）
+#### Behavior on Multiple Triggers (`synchronize` event)
 
-`pull_request_target` のトリガー条件は `opened` と `synchronize`。
-3rd party が PR をオープンしたままブランチに追加コミットをプッシュするたびに
-`synchronize` イベントが発火し、ワークフローが再実行される。
+The trigger conditions for `pull_request_target` are `opened` and `synchronize`.
+Each time a 3rd party pushes additional commits to an open PR branch,
+a `synchronize` event fires and the workflow re-runs.
 
-このとき:
-- 新しい Artifact が `pr-{PR番号}-{新 head SHA}` という名前で生成される
-- 古い Artifact（前回の head SHA 付き）は残ったまま
-- 社内担当者は**最新の head SHA に対応する Artifact のみを使用**すればよい
+In this case:
+- A new Artifact is generated with the name `pr-{PR number}-{new head SHA}`
+- The old Artifact (with the previous head SHA) remains
+- Internal team members need only use **the Artifact corresponding to the latest head SHA**
 
-これにより 3rd party が PR のレビュー中にコードを修正しても、
-社内は常に最新の差分で内部 PR を作成できる。
+This allows internal teams to always work with the latest diff even when
+3rd parties modify code during PR review.
 
-#### PR へのコメント
+#### PR Comment
 
-ワークフロー完了時に PR へ自動コメントを投稿して、社内への転送を通知する。
-PR に複数回プッシュがあった場合、コメントもその都度追加される。
+An automatic comment is posted on the PR when the workflow completes, notifying the 3rd party of forwarding to the internal team.
+If there are multiple pushes to the PR, a comment is added each time.
 
-### C-2. 社内への適用 (`apply-external-pr.sh`)
+### C-2. Applying to Internal Repo (`apply-external-pr.sh`)
 
 ```bash
 ./apply-external-pr.sh --party acme --patch pr.patch --meta pr-meta.json
 ```
 
-`--party` は省略可能（省略時は `3rdparty` をブランチ名プレフィックスに使用）。
+`--party` is optional (omitting it uses `3rdparty` as the branch name prefix).
 
-内部処理フロー:
+Internal processing flow:
 
 ```
-1. meta.json からPR情報を読み込み
-2. 内部 repo を最新化（git fetch + merge --ff-only）
-3. external/<party>-pr-{N} ブランチを作成
-   （同PR再送時は既存ブランチを --force-with-lease で更新）
-4. git apply --3way でパッチ適用
-   失敗時: 競合箇所を表示して終了（手動解消を促す）
-5. author=Bot でコミット
-   コミットメッセージに元PR URL・外部作者を記録
-6. GHE へ push（--force-with-lease）
-7. 内部 PR を作成（ラベル: external-contribution）
-   既存 PR がある場合は作成をスキップ（push 済みで更新される）
+1. Read PR info from meta.json
+2. Update internal repo (git fetch + merge --ff-only)
+3. Create external/<party>-pr-{N} branch
+   (On re-submission of same PR: update existing branch with --force-with-lease)
+4. Apply patch with git apply --3way
+   On failure: display conflict locations and exit (prompt for manual resolution)
+5. Commit with author=Bot
+   Record original PR URL and external author in commit message
+6. Push to GHE (--force-with-lease)
+7. Create internal PR (label: external-contribution)
+   Skip creation if PR already exists (already updated via push)
 ```
 
-### C-3. 変更の部分採用 (`cherry-pick-partial.sh`)
+### C-3. Partial Incorporation of Changes (`cherry-pick-partial.sh`)
 
-外部 PR をまるごと採用する場合:
+To accept the entire external PR:
 
 ```bash
 git checkout main
 git cherry-pick external/acme-pr-123
 ```
 
-特定パスの変更のみ採用する場合:
+To accept changes only for specific paths:
 
 ```bash
 git checkout main
 git checkout external/acme-pr-123 -- \
   services/api/src/Foo.kt \
   services/api/src/Bar.kt
-git commit -m "external(partial): FooBar の変更のみ採用"
+git commit -m "external(partial): accept only FooBar changes"
 ```
 
-patch ファイルからパス指定で適用する場合:
+To apply from a patch file with path filtering:
 
 ```bash
 ./cherry-pick-partial.sh \
   --patch pr-123.patch \
   --meta  pr-123-meta.json \
   --paths "services/api/" "services/common/" \
-  --message "API 変更のみ採用"
+  --message "Accept API changes only"
 ```
 
-### C-4. 採否通知 (`notify-external-pr.sh`)
+### C-4. Acceptance Notification (`notify-external-pr.sh`)
 
-採否結果を外部 PR にコメントで通知する。配送方法に応じて 2 つの出力モードがある。
+Notify the external PR of the acceptance decision via comment.
+Two output modes are available depending on the delivery method.
 
-#### push モード（デフォルト）
+#### push mode (default)
 
-社内から直接 `gh pr comment` を実行する。`REPLICA_GH_REPO` へのアクセス権が必要。
+Run `gh pr comment` directly from internal. Requires access to `REPLICA_GH_REPO`.
 
 ```bash
-# 全部採用
+# Fully accepted
 ./scripts/notify-external-pr.sh --party acme --meta pr-123-meta.json --status accepted
 
-# 一部採用
+# Partially accepted
 ./scripts/notify-external-pr.sh --party acme --meta pr-123-meta.json --status partial
 
-# 却下
+# Rejected
 ./scripts/notify-external-pr.sh --party acme --meta pr-123-meta.json \
   --status rejected \
-  --reason "設計方針と不一致"
+  --reason "Does not align with design direction"
 ```
 
-#### patch モード（レプリカリポジトリへの直接アクセスが不可の場合）
+#### patch mode (when direct access to the replica repository is not available)
 
-通知パッケージ（スクリプト + メタ）を生成して 3rd party に送付する。
-3rd party が自分のマシンで実行することで PR にコメントが投稿される。
+Generate a notification package (script + meta) and send it to the 3rd party.
+The 3rd party runs it on their own machine to post a comment on the PR.
 
 ```bash
 ./scripts/notify-external-pr.sh --party galaxy --meta pr-123-meta.json \
@@ -598,66 +594,67 @@ patch ファイルからパス指定で適用する場合:
   --output patch
 ```
 
-生成されるファイル:
+Generated files:
 
-| ファイル | 内容 |
+| File | Contents |
 |---|---|
-| `notify-TIMESTAMP-meta.json` | PR 番号・コメント本文・close フラグ・リポジトリ名 |
-| `notify-TIMESTAMP.sh` | 3rd party が実行するスタンドアロンスクリプト |
+| `notify-TIMESTAMP-meta.json` | PR number, comment body, close flag, repository name |
+| `notify-TIMESTAMP.sh` | Standalone script for the 3rd party to run |
 
-3rd party 側の実行コマンド（`gh` CLI と `jq` が必要）:
+Command for the 3rd party to run (requires `gh` CLI and `jq`):
 
 ```bash
 ./notify-TIMESTAMP.sh
 ```
 
-出力先ディレクトリは `sync.conf` の `NOTIFY_OUTPUT_DIR`（デフォルト: `./sync-patches`）で設定できる。
+The output directory can be configured via `NOTIFY_OUTPUT_DIR` in `sync.conf` (default: `./sync-patches`).
 
-#### 共通の動作
+#### Common Behavior
 
-`rejected` の場合は外部 PR を自動的に Close する。
-`accepted` / `partial` の場合は次回 milestone sync まで外部 PR をオープンのまま維持し、sync 後に手動で Close する。
+For `rejected`, the external PR is automatically closed.
+For `accepted` / `partial`, the external PR remains open until the next milestone sync, then is manually closed after sync.
 
-### C-5. 外部PR運用状態遷移
+### C-5. External PR State Transitions
 
 ```
-外部 PR の状態        内部での対応
+External PR state     Internal action
 ────────────────      ──────────────────────────────────────────
-opened              → apply-external-pr.sh を実行
-                      内部 PR (external/<party>-pr-N) が作成される
+opened              → run apply-external-pr.sh
+                      internal PR (external/<party>-pr-N) is created
 
-synchronize         → Artifact を再ダウンロードして再実行
-（3rd party が更新）   既存ブランチを --force-with-lease で上書き
+synchronize         → re-download Artifact and re-run
+(3rd party updates)   overwrite existing branch with --force-with-lease
 
-内部 PR レビュー中    → 採用範囲を決定
-  → 全部採用         → cherry-pick
-  → 一部採用         → cherry-pick-partial.sh
-  → 却下             → 内部 PR を Close
+During internal      → determine acceptance scope
+PR review
+  → accept all      → cherry-pick
+  → accept partial  → cherry-pick-partial.sh
+  → reject          → close internal PR
 
-採用後               → notify-external-pr.sh --status accepted
-                      次回 milestone sync で外部 main に反映
-                      sync 完了後に外部 PR を Close（マージしない）
+After acceptance     → notify-external-pr.sh --status accepted
+                      reflected to external main on next milestone sync
+                      close external PR after sync (do not merge)
 
-却下後               → notify-external-pr.sh --status rejected
-                      外部 PR を Close
+After rejection      → notify-external-pr.sh --status rejected
+                      external PR is closed
 ```
 
 ---
 
-## タグ管理まとめ
+## Tag Management Summary
 
-すべてのタグは社内 GHE の `internal-monorepo` 側に保持する。
-タグはすべてアノテーションタグ（`git tag -a`）で作成し、party・output・timestamp 等のメタ情報をメッセージに記録する。
+All tags are kept on the `internal-monorepo` side in the internal GHE.
+All tags are created as annotated tags (`git tag -a`), recording metadata such as party, output, and timestamp in the message.
 
-| タグ名 | 種別 | 作成スクリプト | 役割 |
+| Tag Name | Type | Created by | Role |
 |---|---|---|---|
-| `publish/init-TIMESTAMP` | 不変 | `init-replica.sh` | publish ブランチ初回作成の記録（party 非依存） |
-| `replica/<party>/init-TIMESTAMP` | 不変 | `deliver-to-replica.sh`（初回配送時） | 各 party への初回配送記録 |
-| `replica/<party>/last-sync` | 可動（`-f` で上書き） | `deliver-to-replica.sh` 配送完了時 | 最後に配送した `publish` HEAD を指す（party ごと独立） |
-| `replica/<party>/sync-TIMESTAMP` | 不変 | `deliver-to-replica.sh` 配送完了時 | 各配送の不変記録 |
-| `milestone/YYYY-QN` | 不変 | 手動 | マイルストーン基点。init の `START_TAG` にも使用 |
+| `publish/init-TIMESTAMP` | Immutable | `init-replica.sh` | Record of publish branch first creation (party-independent) |
+| `replica/<party>/init-TIMESTAMP` | Immutable | `deliver-to-replica.sh` (on first delivery) | Record of first delivery to each party |
+| `replica/<party>/last-sync` | Moving (overwritten with `-f`) | `deliver-to-replica.sh` on delivery complete | Points to last delivered `publish` HEAD (independent per party) |
+| `replica/<party>/sync-TIMESTAMP` | Immutable | `deliver-to-replica.sh` on delivery complete | Immutable record of each delivery |
+| `milestone/YYYY-QN` | Immutable | Manual | Milestone anchor. Also used as `START_TAG` for init |
 
-タグに記録されるメタ情報の例（`git show replica/acme/last-sync`）:
+Example metadata recorded in a tag (`git show replica/acme/last-sync`):
 
 ```
 tag replica/acme/last-sync
@@ -674,19 +671,19 @@ timestamp: 20240401-120000
 
 ---
 
-## CI 自動化（任意）
+## CI Automation (Optional)
 
-2フェーズ構成のうちフェーズ1（`stage-publish.sh`）はマイルストーンタグをトリガーに自動実行できる。
-フェーズ2（`deliver-to-replica.sh`）は publish PR のマージをトリガーにするか、手動実行する。
+Of the 2-phase structure, Phase 1 (`stage-publish.sh`) can be triggered automatically by milestone tags.
+Phase 2 (`deliver-to-replica.sh`) can be triggered by merging the publish PR, or run manually.
 
-### フェーズ1 CI（マイルストーンタグ → GHE PR 作成）
+### Phase 1 CI (milestone tag → GHE PR creation)
 
 ```yaml
-# .github/workflows/sync-replica.yml (GHE 側)
+# .github/workflows/sync-replica.yml (GHE side)
 on:
   push:
     tags:
-      - 'milestone/*'   # milestone/2024-Q1 をトリガーに
+      - 'milestone/*'   # triggered by milestone/2024-Q1
 
 jobs:
   stage:
@@ -705,17 +702,17 @@ jobs:
             "sync: ${{ github.ref_name }}"
 ```
 
-### フェーズ2 CI（publish PR マージ → 外部レプリカへ配送）
+### Phase 2 CI (publish PR merge → deliver to external replica)
 
-publish ブランチは全 party 共有のため、PR のラベルで配送先 party を特定する。
+Since the publish branch is shared across all parties, the target party is identified by PR labels.
 
 ```yaml
-# .github/workflows/deliver-replica.yml (GHE 側)
+# .github/workflows/deliver-replica.yml (GHE side)
 on:
   pull_request:
     types: [closed]
     branches:
-      - 'publish'   # publish へのマージをトリガーに
+      - 'publish'   # triggered by merge to publish
 
 jobs:
   deliver:
@@ -743,7 +740,7 @@ jobs:
       - name: Determine party from PR labels
         id: party
         run: |
-          # PR に "party:acme" 形式のラベルを付与する運用を想定
+          # Assumes labels in "party:acme" format are applied to the PR
           PARTY=$(echo '${{ toJSON(github.event.pull_request.labels) }}' \
             | jq -r '.[] | select(.name | startswith("party:")) | .name | ltrimstr("party:")')
           [[ -n "$PARTY" ]] || { echo "No party: label found on PR"; exit 1; }
@@ -763,97 +760,97 @@ jobs:
 
 ---
 
-## オペレーションチェックリスト
+## Operations Checklists
 
-### publish ブランチ初期化
+### publish Branch Initialization
 
-- [ ] Bot 用 SSH 鍵を生成し GHE・github.com に登録
-- [ ] `~/.ssh/config` を設定
-- [ ] 内部 repo に開始タグ `milestone/YYYY-QN` を作成
-- [ ] `config/sync.conf` を設定（`EXCLUDE_PATHS` を確認）
-- [ ] `init-replica.sh milestone/YYYY-QN` を実行
-- [ ] GHE 上の PR（init/... → publish）をレビュー・承認・マージ
+- [ ] Generate Bot SSH keys and register them on GHE and github.com
+- [ ] Configure `~/.ssh/config`
+- [ ] Create start tag `milestone/YYYY-QN` in internal repo
+- [ ] Configure `config/sync.conf` (verify `EXCLUDE_PATHS`)
+- [ ] Run `init-replica.sh milestone/YYYY-QN`
+- [ ] Review, approve, and merge the GHE PR (init/... → publish)
 
-### 3rd party の追加（初回配送）
+### Adding a 3rd Party (First Delivery)
 
-- [ ] `config/party/<party>.conf` を作成
-- [ ] github.com に空のレプリカ repo を作成（push モードの場合）
-- [ ] `deliver-to-replica.sh --party <name> "initial: YYYY-QN"` を実行
-- [ ] レプリカの `main` に Branch Protection または Ruleset を設定（下記参照）
-- [ ] 3rd party に招待を送付
+- [ ] Create `config/party/<party>.conf`
+- [ ] Create an empty replica repo on github.com (for push mode)
+- [ ] Run `deliver-to-replica.sh --party <name> "initial: YYYY-QN"`
+- [ ] Configure Branch Protection or Ruleset on replica `main` (see below)
+- [ ] Send invitation to 3rd party
 
-#### レプリカ `main` ブランチの保護設定
+#### Replica `main` Branch Protection
 
-3rd party が `main` へ直接 push したり、PR をマージしてしまわないようにするための設定。
-2 つの方法がある。
+Settings to prevent 3rd parties from pushing directly to `main` or merging PRs.
+Two methods are available.
 
 ---
 
-##### 方法 1: Branch Protection Rules（簡易）
+##### Method 1: Branch Protection Rules (simple)
 
-GitHub リポジトリの `Settings` → `Branches` → `Add branch protection rule` で `main` を対象に設定する。
+Configure in the GitHub repository under `Settings` → `Branches` → `Add branch protection rule` targeting `main`.
 
-| 設定項目 | 推奨値 | 目的 |
+| Setting | Recommended value | Purpose |
 |---|---|---|
-| Require a pull request before merging | ✅ オン | 直接 push を禁止 |
-| Required number of approvals | 2 以上（承認者が揃わない値） | 事実上マージ不能にする |
-| Do not allow bypassing the above settings | ✅ オン | 管理者もルールに従う |
+| Require a pull request before merging | ✅ On | Prevent direct push |
+| Required number of approvals | 2 or more (a value that can't be satisfied) | Make merging effectively impossible |
+| Do not allow bypassing the above settings | ✅ On | Admins must also follow the rules |
 
-**制限**: Branch Protection Rules はブランチ名パターンで適用対象を分けられないため、
-`sync/*` ブランチ（`deliver-to-replica.sh` が作成するデリバリー PR）にも同じルールが適用される。
-デリバリー PR は Bot が push するため、Bot アカウントを `Bypass list` に追加するか、
-方法 2 の Ruleset を使う。
+**Limitation**: Branch Protection Rules cannot differentiate by branch name pattern,
+so the same rules apply to `sync/*` branches (delivery PRs created by `deliver-to-replica.sh`).
+Since delivery PRs are pushed by Bot, either add the Bot account to the `Bypass list`,
+or use Method 2 Rulesets.
 
 ---
 
-##### 方法 2: Rulesets（推奨・より厳密）
+##### Method 2: Rulesets (recommended — more precise)
 
-GitHub リポジトリの `Settings` → `Rules` → `Rulesets` → `New branch ruleset` で設定する。
+Configure in the GitHub repository under `Settings` → `Rules` → `Rulesets` → `New branch ruleset`.
 
-**Ruleset 1: `main` 直接 push 禁止**
+**Ruleset 1: Block direct push to `main`**
 
-| 項目 | 設定値 |
+| Item | Value |
 |---|---|
 | Name | `protect-main` |
 | Enforcement | Active |
 | Target branches | `main` |
 | Restrict creations | ✅ |
 | Restrict deletions | ✅ |
-| Require a pull request before merging | ✅、required approvals: 2 以上 |
+| Require a pull request before merging | ✅, required approvals: 2 or more |
 | Block force pushes | ✅ |
-| Bypass list | Bot アカウント（`deliver-to-replica.sh` が使う GitHub ユーザー）を追加 |
+| Bypass list | Add Bot account (the GitHub user used by `deliver-to-replica.sh`) |
 
-**Ruleset 2: `sync/*` PR のマージ許可（Bypass 不要の場合は省略可）**
+**Ruleset 2: Allow merging of `sync/*` PRs (can be omitted if Bypass is unnecessary)**
 
-Ruleset の `Bypass list` に Bot アカウントを追加することで、
-`deliver-to-replica.sh` による `sync/*` → `main` のマージは Bot が行えるようになる。
-3rd party ユーザーは `main` への直接 push もマージもできない。
+Adding the Bot account to the Ruleset's `Bypass list` allows
+`deliver-to-replica.sh` to merge `sync/*` → `main` via the Bot.
+3rd party users cannot push directly to `main` or merge PRs.
 
-**Rulesets の利点**:
-- ブランチパターン・actor（ユーザー/チーム）単位で細かく制御できる
-- 複数 Ruleset の組み合わせが可能
-- Organization レベルでの一括適用もできる（Organization Rulesets）
+**Advantages of Rulesets**:
+- Fine-grained control by branch pattern and actor (user/team)
+- Multiple Rulesets can be combined
+- Organization-level bulk application is possible (Organization Rulesets)
 
-### マイルストーン同期
+### Milestone Sync
 
-**フェーズ1（ステージ）**
-- [ ] 内部 repo で `milestone/YYYY-QN` タグを作成
-- [ ] `stage-publish.sh "sync: YYYY-QN"` を実行
-- [ ] GHE 上の PR（sync/... → publish）をレビュー・承認・マージ
+**Phase 1 (stage)**
+- [ ] Create `milestone/YYYY-QN` tag in internal repo
+- [ ] Run `stage-publish.sh "sync: YYYY-QN"`
+- [ ] Review, approve, and merge the GHE PR (sync/... → publish)
 
-**フェーズ2（配送）**
-- [ ] `deliver-to-replica.sh --party <name>` を実行（3rd party ごとに繰り返す）
-- [ ] `--output push --mode pr` の場合: 3rd party が sync PR をレビュー・マージ
-- [ ] `--output push --mode direct` の場合: push 完了で完了
-- [ ] `--output patch` の場合: patch / meta.json / apply.sh を 3rd party へ送付
-- [ ] `--output patch` の場合: タグはパッチセット生成時に自動更新される
+**Phase 2 (deliver)**
+- [ ] Run `deliver-to-replica.sh --party <name>` (repeat for each 3rd party)
+- [ ] For `--output push --mode pr`: 3rd party reviews and merges sync PR
+- [ ] For `--output push --mode direct`: complete on push
+- [ ] For `--output patch`: send patch / meta.json / apply.sh to 3rd party
+- [ ] For `--output patch`: tags are automatically updated at patch generation time
 
-### 外部PR取り込み
+### External PR Incorporation
 
-- [ ] github.com の PR から Artifact (patch + meta) をダウンロード
-- [ ] `apply-external-pr.sh` を実行
-- [ ] 内部 PR をレビュー
-- [ ] 採用範囲を決定し `cherry-pick` または `cherry-pick-partial.sh` を実行
-- [ ] `notify-external-pr.sh` で外部 PR に採否を通知
-- [ ] 採用の場合: 次回 milestone sync 後に外部 PR を Close
-- [ ] 却下の場合: 外部 PR は自動 Close 済み
+- [ ] Download Artifact (patch + meta) from the PR on github.com
+- [ ] Run `apply-external-pr.sh`
+- [ ] Review internal PR
+- [ ] Determine acceptance scope and run `cherry-pick` or `cherry-pick-partial.sh`
+- [ ] Notify external PR of result via `notify-external-pr.sh`
+- [ ] For accepted: close external PR after next milestone sync
+- [ ] For rejected: external PR is already auto-closed

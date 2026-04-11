@@ -1,16 +1,15 @@
 name: Forward PR to Internal
 
-# github.com レプリカ側の GitHub Actions。
-# 3rd party が main へ PR を作成・更新した際に
-# 差分 patch と meta を Artifact として保存する。
-# （社内担当者が Artifact をダウンロードして apply-external-pr.sh に渡す）
+# GitHub Actions on the github.com replica side.
+# Saves the diff patch and meta as Artifacts when a 3rd party creates or updates a PR targeting main.
+# (Internal team members download the Artifact and pass it to apply-external-pr.sh)
 #
-# pull_request_target を使う理由:
-#   pull_request イベントでは GITHUB_TOKEN が PR API へのアクセス権を持たず
-#   gh pr diff / gh pr view が HTTP 403 になるため。
-#   pull_request_target はベースリポジトリのセキュリティコンテキストで動作し
-#   トークンが PR API にアクセスできる。
-#   PR ヘッドのコードは checkout しないので untrusted code は実行されない。
+# Why pull_request_target is used:
+#   With the pull_request event, GITHUB_TOKEN does not have access to the PR API,
+#   causing gh pr diff / gh pr view to return HTTP 403.
+#   pull_request_target runs in the security context of the base repository,
+#   so the token can access the PR API.
+#   The PR head code is not checked out, so untrusted code is never executed.
 
 on:
   pull_request_target:
@@ -40,7 +39,7 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          # pr_body 内の改行・特殊文字を jq で安全にエスケープ
+          # Safely escape newlines and special characters in pr_body using jq
           PR_BODY=$(gh pr view ${{ github.event.pull_request.number }} \
             --repo ${{ github.repository }} \
             --json body --jq '.body')

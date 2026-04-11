@@ -1,122 +1,122 @@
-# 設計決定記録 (Architecture Decision Records)
+# Architecture Decision Records
 
 ---
 
-## ADR-001: 初回レプリカ作成に `git archive` を使用する
+## ADR-001: Use `git archive` for initial replica creation
 
-**状態**: 採用
+**Status**: Accepted
 
-**背景**:
-3rd party と共有するレプリカには社内のコミット履歴・author 情報・ブランチ構成を含めたくない。
+**Context**:
+The replica shared with 3rd parties must not contain internal commit history, author information, or branch structure.
 
-**検討した選択肢**:
-- `git clone`: 内部コミット履歴をそのまま複製する。NG。
-- `git clone --depth 1`: 直近1コミットのみだが、コミット author は残る。NG。
-- `git archive | tar`: ファイルツリーのスナップショットのみ出力。履歴なし。✅
+**Options considered**:
+- `git clone`: Copies internal commit history as-is. Rejected.
+- `git clone --depth 1`: Only the latest commit, but commit author remains. Rejected.
+- `git archive | tar`: Outputs only a file tree snapshot. No history. ✅
 
-**決定**:
-`git archive <START_TAG>` でファイルツリーのみを取り出し、
-`git init` で新規リポジトリとして履歴ゼロで初期コミットする。
-
----
-
-## ADR-002: 同期は squash（1差分 = 1コミット）にする
-
-**状態**: 採用
-
-**背景**:
-内部の開発粒度・ブランチ構成・コミットメッセージが外部から見えてしまうと、
-社内開発のリズムや設計意図が漏洩するリスクがある。
-
-**決定**:
-`git diff replica/last-sync..HEAD` で全差分を1パッチに集約し、
-1コミットとして適用する（squash）。
+**Decision**:
+Use `git archive <START_TAG>` to extract only the file tree,
+then create a new repository with `git init` and an initial commit with zero history.
 
 ---
 
-## ADR-003: コミット author を Bot に差し替える
+## ADR-002: Sync as squash (1 diff = 1 commit)
 
-**状態**: 採用
+**Status**: Accepted
 
-**背景**:
-社内開発者の名前・メールアドレスを外部に漏洩させたくない。
+**Context**:
+If internal development granularity, branch structure, and commit messages are visible externally,
+there is a risk of leaking internal development rhythm and design intent.
 
-**決定**:
-`GIT_AUTHOR_NAME` / `GIT_AUTHOR_EMAIL` / `GIT_COMMITTER_NAME` / `GIT_COMMITTER_EMAIL`
-環境変数で完全に差し替える。
-
----
-
-## ADR-004: 同期起点管理に可動タグ (`replica/last-sync`) を使用する
-
-**状態**: 採用
-
-**背景**:
-「前回どこまで同期したか」を記録する必要がある。
-この情報はブランチでもファイルでも管理できるが、
-内部 repo の特定コミットを直接指すタグが最も直感的。
-
-**決定**:
-`replica/last-sync` タグを sync 完了後に `git tag -f` で前進させる。
-不変の記録を残したい場合は別途 `replica/sync-YYYYMMDD` タグを追加で打つ。
+**Decision**:
+Consolidate all diffs into a single patch with `git diff replica/last-sync..HEAD`
+and apply as a single commit (squash).
 
 ---
 
-## ADR-005: 外部PRはレプリカ main にマージしない
+## ADR-003: Replace commit author with Bot
 
-**状態**: 採用
+**Status**: Accepted
 
-**背景**:
-外部 PR を直接レプリカ `main` にマージすると、
-社内同期でレプリカを更新する際に外部の変更との競合が複雑になる。
-また、社内でレビューされていない変更が外部 `main` に入ることを防ぎたい。
+**Context**:
+Internal developer names and email addresses must not leak externally.
 
-**決定**:
-外部 PR を社内に patch として持ち込み、社内でレビュー・cherry-pick した後、
-次回 milestone sync でレプリカへ反映する。
-外部 PR はマージせず Close する。
+**Decision**:
+Completely replace via `GIT_AUTHOR_NAME` / `GIT_AUTHOR_EMAIL` / `GIT_COMMITTER_NAME` / `GIT_COMMITTER_EMAIL`
+environment variables.
 
 ---
 
-## ADR-006: sync スクリプトに3モードを持たせる
+## ADR-004: Use a moving tag (`replica/last-sync`) to track the sync origin
 
-**状態**: 採用
+**Status**: Accepted
 
-**背景**:
-- GHE → github.com のネットワーク疎通が保証できない環境がある
-- 3rd party がレビューしたい場合と即時反映したい場合がある
+**Context**:
+We need to record "how far we synced last time".
+This information could be managed in a branch, a file, or a tag,
+but a tag pointing directly to a specific commit in the internal repo is the most intuitive.
 
-**決定**:
-`--mode` オプションで3モードを切り替えられるようにする。
+**Decision**:
+Advance the `replica/last-sync` tag with `git tag -f` after each sync completes.
+For immutable records, additionally create a `replica/sync-YYYYMMDD` tag.
 
-| モード | 用途 |
+---
+
+## ADR-005: Do not merge external PRs into the replica main
+
+**Status**: Accepted
+
+**Context**:
+If external PRs are merged directly into the replica `main`,
+conflicts with external changes become complex when updating the replica via internal sync.
+We also want to prevent unreviewed changes from entering the external `main`.
+
+**Decision**:
+Bring external PRs into the internal repo as patches, review and cherry-pick internally,
+then reflect them to the replica on the next milestone sync.
+Close external PRs without merging.
+
+---
+
+## ADR-006: Support 3 modes in the sync script
+
+**Status**: Accepted
+
+**Context**:
+- Some environments cannot guarantee network connectivity from GHE to github.com
+- Some cases require 3rd party review; others require immediate delivery
+
+**Decision**:
+Support switching between 3 modes via the `--mode` option.
+
+| Mode | Use case |
 |--------|------|
-| `pr`（デフォルト）| 3rd party がレビュー・マージするフロー |
-| `direct` | 即時反映（社内主導） |
-| `patch` | ネットワーク不通環境・手動受け渡しフロー |
+| `pr` (default) | Flow where 3rd party reviews and merges |
+| `direct` | Immediate delivery (internally driven) |
+| `patch` | No-network environments / manual handoff flow |
 
 ---
 
-## ADR-007: 外部PR差分をgithub.com CI で Artifact として保存する
+## ADR-007: Save external PR diffs as Artifacts via github.com CI
 
-**状態**: 採用
+**Status**: Accepted
 
-**背景**:
-GHE から github.com へのインバウンド通信を前提にすると、
-セキュリティ要件を満たせない環境では動作しない。
+**Context**:
+Assuming inbound communication from GHE to github.com would not work
+in environments with strict security requirements.
 
-**決定**:
-github.com 側の CI が patch + meta.json を Artifact として保存する。
-社内担当者が Artifact をダウンロードして `apply-external-pr.sh` に渡す手動フローを基本とする。
-ネットワーク疎通が保証できる環境では `workflow_dispatch` によるリモート起動への移行も可能。
+**Decision**:
+The github.com CI saves patch + meta.json as Artifacts.
+The default flow has internal team members download the Artifact and pass it to `apply-external-pr.sh` manually.
+In environments where network connectivity is guaranteed, migration to remote triggering via `workflow_dispatch` is also possible.
 
 ---
 
-## 未解決の課題
+## Open Issues
 
-| # | 課題 | 優先度 |
+| # | Issue | Priority |
 |---|------|--------|
-| 1 | `git apply --3way` で競合発生時の半自動解消フロー | 中 |
-| 2 | 複数の 3rd party がいる場合のレプリカ分離戦略（1レプリカ vs 複数） | 高 |
-| 3 | 除外パスのより細粒度な制御（ファイル単位での除外） | 低 |
-| 4 | `cherry-pick-partial.sh` の `--include` pathspec の git バージョン互換性 | 中 |
+| 1 | Semi-automatic conflict resolution flow when `git apply --3way` fails | Medium |
+| 2 | Replica isolation strategy for multiple 3rd parties (1 replica vs multiple) | High |
+| 3 | Finer-grained control of excluded paths (file-level exclusion) | Low |
+| 4 | Git version compatibility of `cherry-pick-partial.sh` `--include` pathspec | Medium |

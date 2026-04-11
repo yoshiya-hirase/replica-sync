@@ -1,12 +1,12 @@
-# レプリカ同期 テスト手順ガイド
+# Replica Sync — Test Procedure Guide
 
-このガイドは `test/` ディレクトリのスクリプトを使って、replica-sync のオペレーションをローカル環境で一通り検証する手順を示す。
+This guide walks through the steps to verify replica-sync operations end-to-end using the scripts in the `test/` directory.
 
 ---
 
-## 元のシナリオ
+## Original Scenario
 
-テストシナリオの原案。実装仕様との差異は次節「元のシナリオからの変更点」に記載する。
+The original test scenario. Differences from the implemented spec are noted in the next section "Changes from Original Scenario".
 
 1. Create a test repo with some test code in main branch → a script
 2. Commit some code and files to make several commit histories. In this case, some files would be defined as "exclude contents" in sync.conf → would be a script
@@ -37,148 +37,148 @@
 
 ---
 
-## 元のシナリオからの変更点
+## Changes from Original Scenario
 
-以下の点が元のシナリオと異なる（実装仕様に合わせて修正）:
+The following points differ from the original scenario (adjusted to match the implemented spec):
 
-| 元のシナリオ | 修正後 |
+| Original scenario | Updated |
 |---|---|
-| Step 4「dummy 3rd party repo を作成」 | 削除。3rd party repo は Steps 10/14 で作成する |
-| Step 5「`init-replica.sh` でレプリカ作成」 | `init-replica.sh` は publish ブランチ初期化のみ。3rd party への配送は `deliver-to-replica.sh` が担う |
-| Step 14 が重複 | 2番目の Step 14 以降を繰り下げ（Step 15〜25 に再番号） |
-| Steps 10/14 後に party.conf 作成が抜けていた | `04-create-party-repo.sh` が party.conf を自動生成する |
-| Steps 22-23 の間に artifact ダウンロードが抜けていた | Step 22 として `10-download-artifact.sh` を追加 |
-| 元 Step 15「patch モード配送後に last-sync タグを手動更新」 | patch モードでもパッチセット生成時に自動でタグを進めるよう変更。手動ステップを削除し Steps 16〜25 を 15〜24 に繰り上げ |
+| Step 4 "Create dummy 3rd party repo" | Removed. 3rd party repos are created in Steps 10/14 |
+| Step 5 "Create replica with `init-replica.sh`" | `init-replica.sh` only initializes the publish branch. Delivery to 3rd parties is handled by `deliver-to-replica.sh` |
+| Step 14 was duplicated | Second Step 14 onward renumbered (Steps 15–25 → renumbered) |
+| party.conf creation was missing after Steps 10/14 | `04-create-party-repo.sh` auto-generates party.conf |
+| Artifact download step was missing between Steps 22–23 | Added as Step 22: `10-download-artifact.sh` |
+| Original Step 15 "manually update last-sync tag after patch mode delivery" | Tags are now automatically advanced at patch set generation time in patch mode. Manual step removed; Steps 16–25 renumbered to 15–24 |
 
 ---
 
-## 前提条件
+## Prerequisites
 
 ```bash
-git --version    # 2.35 以上
-gh --version     # GitHub CLI（認証済み）
+git --version    # 2.35 or later
+gh --version     # GitHub CLI (authenticated)
 jq --version
 ```
 
-GitHub CLI 認証確認:
+Verify GitHub CLI authentication:
 ```bash
 gh auth status
 ```
 
 ---
 
-## テスト環境セットアップ
+## Test Environment Setup
 
 ```bash
-# テスト設定ファイルを作成
+# Create test config file
 cp test/test.conf.example test/test.conf
-$EDITOR test/test.conf  # GITHUB_USER と TEST_DIR を設定
+$EDITOR test/test.conf  # Set GITHUB_USER and TEST_DIR
 
-# スクリプトに実行権限を付与
+# Make scripts executable
 chmod +x scripts/*.sh test/*.sh
 ```
 
 ---
 
-## テストシナリオ
+## Test Scenario
 
-### Phase 1: 内部リポジトリのセットアップ
+### Phase 1: Internal Repository Setup
 
-#### Step 1: 内部リポジトリ作成
+#### Step 1: Create Internal Repository
 
 ```bash
 ./test/01-setup-internal.sh
 ```
 
-**作成されるもの:**
+**What is created:**
 - GitHub repo: `<GITHUB_USER>/test-internal-monorepo` (private)
-- ローカルクローン: `<TEST_DIR>/internal/`
-- 初期コミット構造（公開ファイル + 除外ファイル）
-- 除外対象: `internal-only/` と `.secrets/`
-- マイルストーンタグ: `milestone/v1`
+- Local clone: `<TEST_DIR>/internal/`
+- Initial commit structure (public files + excluded files)
+- Excluded targets: `internal-only/` and `.secrets/`
+- Milestone tag: `milestone/v1`
 
-**確認ポイント:** `<TEST_DIR>/internal/` に以下が存在すること
+**Verification points:** The following should exist in `<TEST_DIR>/internal/`
 ```
-services/api/         ← publish ブランチに含まれる
+services/api/         ← included in publish branch
 services/common/
 services/auth/
 services/users/
-internal-only/        ← EXCLUDE_PATHS により publish ブランチから除外される
-.secrets/             ← 同上
+internal-only/        ← excluded from publish branch by EXCLUDE_PATHS
+.secrets/             ← same
 ```
 
-#### Step 2: sync.conf 生成
+#### Step 2: Generate sync.conf
 
 ```bash
 ./test/03-generate-sync-conf.sh
 ```
 
-`config/sync.conf` が生成される。内容を確認:
+`config/sync.conf` is generated. Review the contents:
 ```bash
 cat config/sync.conf
 ```
 
 ---
 
-### Phase 2: publish ブランチ初期化
+### Phase 2: Initialize publish Branch
 
-#### Step 3: init-replica.sh を実行
+#### Step 3: Run init-replica.sh
 
 ```bash
 ./scripts/init-replica.sh milestone/v1
 ```
 
-**確認ポイント:**
-- GHE（GitHub）上に PR が作成される: `init/TIMESTAMP → publish`
-- PR の差分に `internal-only/` と `.secrets/` が含まれていないこと
-- PR の差分がスナップショット（コミット履歴なし）であること
+**Verification points:**
+- A PR is created on GHE (GitHub): `init/TIMESTAMP → publish`
+- `internal-only/` and `.secrets/` are not included in the PR diff
+- The PR diff is a snapshot (no commit history)
 
-#### Step 4 (手動): PR をレビューしてマージ
+#### Step 4 (manual): Review and merge PR
 
-ブラウザで PR を開き、内容を確認してマージする。
+Open the PR in a browser, review the contents, and merge.
 
 ```bash
-# PR URL を確認
+# Check PR URL
 gh pr list --repo <GITHUB_USER>/test-internal-monorepo \
   --json number,title,headRefName \
   --jq '.[] | select(.headRefName | startswith("init/")) | "#\(.number) \(.headRefName) — \(.title)"'
 ```
 
-**確認ポイント:**
-- `publish` ブランチに `internal-only/` が含まれていないこと
-- `publish` ブランチのコミットが1つ（squash された初期スナップショット）であること
+**Verification points:**
+- `internal-only/` is not included in the `publish` branch
+- The `publish` branch has exactly 1 commit (the squashed initial snapshot)
 
 ---
 
-### Phase 3: 継続的開発のシミュレーション
+### Phase 3: Simulating Continuous Development
 
-#### Step 5: 開発コミットを追加
+#### Step 5: Add Development Commits
 
 ```bash
-# 最初の追加（マイルストーンタグあり）
+# First addition (with milestone tag)
 ./test/02-add-commits.sh milestone/v2
 
-# 必要に応じて繰り返し実行（タグなし）
+# Repeat as needed (without tag)
 ./test/02-add-commits.sh
 ./test/02-add-commits.sh
 ```
 
-各実行で追加される:
-- `services/feature-N/FeatureService.kt` — publish ブランチに含まれる
-- `internal-only/FeatureNConfig.kt` — 除外される
+Each run adds:
+- `services/feature-N/FeatureService.kt` — included in publish branch
+- `internal-only/FeatureNConfig.kt` — excluded
 
-#### Step 6: stage-publish.sh を実行
+#### Step 6: Run stage-publish.sh
 
 ```bash
 ./scripts/stage-publish.sh "sync: v2"
 ```
 
-**確認ポイント:**
-- GHE 上に PR が作成される: `sync/TIMESTAMP → publish`
-- PR の差分に `internal-only/` の変更が含まれていないこと
-- PR 本文に内部コミット一覧が記載されていること
+**Verification points:**
+- A PR is created on GHE: `sync/TIMESTAMP → publish`
+- `internal-only/` changes are not included in the PR diff
+- The PR body lists internal commits
 
-#### Step 7 (手動): PR をレビューしてマージ
+#### Step 7 (manual): Review and merge PR
 
 ```bash
 gh pr list --repo <GITHUB_USER>/test-internal-monorepo \
@@ -188,41 +188,41 @@ gh pr list --repo <GITHUB_USER>/test-internal-monorepo \
 
 ---
 
-### Phase 4: 3rd party への配送（push モード）
+### Phase 4: Deliver to 3rd Party (push mode)
 
-#### Step 8: 3rd party repo 1 を作成（push モード用）
+#### Step 8: Create 3rd Party Repo 1 (for push mode)
 
 ```bash
 ./test/04-create-party-repo.sh --party acme --repo test-replica-acme
 ```
 
-**作成されるもの:**
+**What is created:**
 - GitHub repo: `<GITHUB_USER>/test-replica-acme`
-- ローカルクローン: `<TEST_DIR>/acme/`
+- Local clone: `<TEST_DIR>/acme/`
 - `config/party/acme.conf`
-- `.github/workflows/pr-to-internal.yml`（外部PR受付用）
+- `.github/workflows/pr-to-internal.yml` (for receiving external PRs)
 
-#### Step 9: deliver-to-replica.sh を実行（push モード）
+#### Step 9: Run deliver-to-replica.sh (push mode)
 
 ```bash
 ./scripts/deliver-to-replica.sh --party acme "initial: v1"
 ```
 
-初回配送のため `last-sync` タグは存在しない → publish の先頭から全量を配送する。
+First delivery — no `last-sync` tag exists yet → delivers the full content from the first commit of publish.
 
-**確認ポイント:**
-- GitHub 上に sync PR が作成される（`--mode pr` デフォルト）
-- acme repo の main が更新されること（PR マージ後）
+**Verification points:**
+- A sync PR is created on GitHub (`--mode pr` default)
+- acme repo main is updated (after PR merge)
 
-PR をマージ後:
+After merging the PR:
 
-#### Step 10: 配送内容を検証
+#### Step 10: Verify Delivery
 
 ```bash
 ./test/05-verify-delivery.sh --party acme
 ```
 
-**期待結果:**
+**Expected result:**
 ```
 [  ok  ] File lists match
 [  ok  ] File contents match
@@ -230,34 +230,34 @@ PR をマージ後:
 [  ok  ] Excluded path absent: .secrets
 ```
 
-#### Step 11: タグを確認
+#### Step 11: Check Tags
 
 ```bash
 ./test/06-show-tags.sh --party acme
 ```
 
-**確認ポイント:**
-- `replica/acme/init-TIMESTAMP` タグが存在する（初回配送記録）
-- `replica/acme/last-sync` タグが publish HEAD を指している
-- `replica/acme/sync-TIMESTAMP` タグが存在する
+**Verification points:**
+- `replica/acme/init-TIMESTAMP` tag exists (first delivery record)
+- `replica/acme/last-sync` tag points to publish HEAD
+- `replica/acme/sync-TIMESTAMP` tag exists
 
 ---
 
-### Phase 5: 3rd party への配送（patch モード）
+### Phase 5: Deliver to 3rd Party (patch mode)
 
-#### Step 12: 3rd party repo 2 を作成（patch モード用）
+#### Step 12: Create 3rd Party Repo 2 (for patch mode)
 
 ```bash
 ./test/04-create-party-repo.sh --party beta --repo test-replica-beta
 ```
 
-#### Step 13: deliver-to-replica.sh を実行（patch モード）
+#### Step 13: Run deliver-to-replica.sh (patch mode)
 
 ```bash
 ./scripts/deliver-to-replica.sh --party beta --output patch "initial: v1"
 ```
 
-`test-patches/` ディレクトリにファイルが生成される:
+Files are generated in the `test-patches/` directory:
 ```
 test-patches/
 ├── sync-TIMESTAMP.patch
@@ -266,20 +266,20 @@ test-patches/
 └── sync-TIMESTAMP-apply.sh
 ```
 
-#### Step 14: 3rd party 側でパッチを適用
+#### Step 14: Apply Patch on 3rd Party Side
 
-生成された `apply.sh` を beta レポで実行する:
+Run the generated `apply.sh` in the beta repo:
 
 ```bash
 cd <TEST_DIR>/beta
 bash <path-to-apply.sh>
 ```
 
-PR モードの場合、GitHub 上に PR が作成される。マージ後に続ける。
+For PR mode, a PR is created on GitHub. Merge it before continuing.
 
-#### Step 15: 配送内容を検証 & タグ確認
+#### Step 15: Verify Delivery & Check Tags
 
-galaxy レポの sync PR を GitHub 上でマージしてから実行する（`05-verify-delivery.sh` は party repo の `main` と比較するため）。
+Merge the galaxy repo sync PR on GitHub first (since `05-verify-delivery.sh` compares against the party repo's `main`).
 
 ```bash
 ./test/05-verify-delivery.sh --party galaxy
@@ -288,51 +288,51 @@ galaxy レポの sync PR を GitHub 上でマージしてから実行する（`0
 
 ---
 
-### Phase 6: 外部 PR フロー
+### Phase 6: External PR Flow
 
-#### Step 16: 3rd party dev ブランチを作成
+#### Step 16: Create 3rd Party dev Branch
 
 ```bash
-# acme party の dev ブランチを作成
+# Create dev branch for acme party
 ./test/07-setup-3rdparty-branch.sh --party acme --branch dev
 ```
 
-#### Step 17: 3rd party に開発コミットを追加
+#### Step 17: Add Development Commits on 3rd Party
 
 ```bash
 ./test/08-add-3rdparty-commits.sh --party acme --branch dev
 ```
 
-追加されるファイル（cherry-pick-partial.sh のテスト用に複数パスに分散）:
-- `services/api/ExternalFeatureN.kt` — 採用しやすい変更
-- `services/common/Utils.kt` — 部分的に採用しやすい変更
-- `services/acme-extensions/` — 採用しにくい party 固有の変更
+Files added (spread across multiple paths to test cherry-pick-partial.sh):
+- `services/api/ExternalFeatureN.kt` — easy to accept change
+- `services/common/Utils.kt` — partially acceptable change
+- `services/acme-extensions/` — party-specific change that is hard to accept
 
-#### Step 18: 3rd party から PR を作成
+#### Step 18: Create PR from 3rd Party
 
 ```bash
 ./test/09-create-3rdparty-pr.sh --party acme --branch dev
 ```
 
-PR 作成後、`pr-to-internal.yml` CI が自動実行される。
+After the PR is created, the `pr-to-internal.yml` CI runs automatically.
 
-#### Step 19 (手動): CI の完了を確認
+#### Step 19 (manual): Confirm CI Completion
 
 ```bash
 gh run list --repo <GITHUB_USER>/test-replica-acme --workflow pr-to-internal.yml
 ```
 
-ステータスが `completed / success` になるまで待つ（通常 1〜2 分）。
+Wait until the status shows `completed / success` (typically 1–2 minutes).
 
-#### Step 20: artifact をダウンロード
+#### Step 20: Download Artifact
 
 ```bash
 ./test/10-download-artifact.sh --party acme --pr <PR_NUMBER>
 ```
 
-`test-artifacts/acme/pr-<N>/` に `pr.patch` と `pr-meta.json` が保存される。
+`pr.patch` and `pr-meta.json` are saved to `test-artifacts/acme/pr-<N>/`.
 
-#### Step 21: 内部リポジトリに PR を作成
+#### Step 21: Create PR in Internal Repository
 
 ```bash
 ./scripts/apply-external-pr.sh \
@@ -341,22 +341,22 @@ gh run list --repo <GITHUB_USER>/test-replica-acme --workflow pr-to-internal.yml
   --meta  test-artifacts/acme/pr-<N>/pr-meta.json
 ```
 
-**確認ポイント:**
-- 内部 repo に `external/acme-pr-N` ブランチが作成される
-- GHE（GitHub）上に内部 PR が作成される
-- PR に外部 PR URL・外部 author が記録されていること
+**Verification points:**
+- `external/acme-pr-N` branch is created in the internal repo
+- An internal PR is created on GHE (GitHub)
+- The external PR URL and external author are recorded in the PR
 
-#### Step 22 (手動): 内部 PR をレビュー
+#### Step 22 (manual): Review Internal PR
 
-内部 PR を確認し、採用するパスを決める。
+Review the internal PR and decide which paths to accept.
 
-#### Step 23: cherry-pick-partial.sh で部分採用
+#### Step 23: Partial Acceptance with cherry-pick-partial.sh
 
 ```bash
 cd <TEST_DIR>/internal
 git checkout main
 
-# services/api/ のみ採用する例
+# Example: accept only services/api/
 ./scripts/cherry-pick-partial.sh \
   --patch test-artifacts/acme/pr-<N>/pr.patch \
   --meta  test-artifacts/acme/pr-<N>/pr-meta.json \
@@ -364,22 +364,22 @@ git checkout main
   --message "Accept acme API feature only"
 ```
 
-**確認ポイント:**
-- `services/api/ExternalFeatureN.kt` のみ main に取り込まれていること
-- `services/acme-extensions/` は含まれていないこと
+**Verification points:**
+- Only `services/api/ExternalFeatureN.kt` is incorporated into main
+- `services/acme-extensions/` is not included
 
-#### Step 24: 外部 PR に通知
+#### Step 24: Notify External PR
 
-**push モード（acme: push で同期している party）:**
+**push mode (acme: party using push sync):**
 
 ```bash
-# 部分採用の場合
+# Partially accepted
 ./scripts/notify-external-pr.sh \
   --party acme \
   --meta  test-artifacts/acme/pr-<N>/pr-meta.json \
   --status partial
 
-# 却下の場合
+# Rejected
 ./scripts/notify-external-pr.sh \
   --party acme \
   --meta  test-artifacts/acme/pr-<N>/pr-meta.json \
@@ -387,7 +387,7 @@ git checkout main
   --reason "acme-extensions does not fit the design direction"
 ```
 
-**patch モード（galaxy: patch で同期している party）:**
+**patch mode (galaxy: party using patch sync):**
 
 ```bash
 ./scripts/notify-external-pr.sh \
@@ -397,58 +397,57 @@ git checkout main
   --output patch
 ```
 
-`sync-patches/` に `notify-TIMESTAMP.sh` と `notify-TIMESTAMP-meta.json` が生成される。
-この 2 ファイルを galaxy に送付し、galaxy 側で `./notify-TIMESTAMP.sh` を実行してもらう。
+`notify-TIMESTAMP.sh` and `notify-TIMESTAMP-meta.json` are generated in `sync-patches/`.
+Send these 2 files to galaxy and have them run `./notify-TIMESTAMP.sh`.
 
-**確認ポイント:**
-- push モード: 外部 PR にコメントが直接投稿されていること
-- patch モード: 通知パッケージが生成されること / 3rd party が実行するとコメントが投稿されること
-- `rejected` の場合、外部 PR が自動 Close されること
+**Verification points:**
+- push mode: comment is posted directly on the external PR
+- patch mode: notification package is generated / running it on the 3rd party side posts the comment
+- For `rejected`: external PR is automatically closed
 
 ---
 
-## テスト後のクリーンアップ
+## Post-Test Cleanup
 
 ```bash
-# ローカルクローンを削除
+# Remove local clones
 rm -rf <TEST_DIR>/internal <TEST_DIR>/acme <TEST_DIR>/beta
 
-# GitHub repos を削除
+# Delete GitHub repos
 gh repo delete <GITHUB_USER>/test-internal-monorepo --yes
 gh repo delete <GITHUB_USER>/test-replica-acme --yes
 gh repo delete <GITHUB_USER>/test-replica-beta --yes
 ```
 
-> **`gh repo delete` で HTTP 403 が出る場合:**
-> `gh` トークンに `delete_repo` スコープが付与されていない。以下を実行してスコープを追加し、再認証する:
+> **If `gh repo delete` returns HTTP 403:**
+> The `gh` token does not have the `delete_repo` scope. Run the following to add the scope and re-authenticate:
 > ```bash
 > gh auth refresh -h github.com -s delete_repo
 > ```
-> ブラウザが開くので認証を完了させてから、`gh repo delete` を再実行する。
+> Complete authentication in the browser, then re-run `gh repo delete`.
 
 ```bash
-
-# 生成された設定ファイルを削除
+# Remove generated config files
 rm -f config/sync.conf
 rm -f config/party/acme.conf config/party/beta.conf
 
-# テスト成果物を削除
+# Remove test artifacts
 rm -rf test-patches/ test-artifacts/
 ```
 
 ---
 
-## テストスクリプト一覧
+## Test Scripts Reference
 
-| スクリプト | 用途 | 引数 |
+| Script | Purpose | Arguments |
 |---|---|---|
-| `test/01-setup-internal.sh` | 内部リポジトリ作成・初期コミット | なし |
-| `test/02-add-commits.sh` | 開発コミット追加（繰り返し可） | `[milestone-tag]` |
-| `test/03-generate-sync-conf.sh` | `config/sync.conf` 生成 | なし |
-| `test/04-create-party-repo.sh` | 3rd party repo 作成・party.conf 生成 | `--party <name> --repo <repo-name>` |
-| `test/05-verify-delivery.sh` | 配送内容の検証 | `--party <name>` |
-| `test/06-show-tags.sh` | タグ一覧表示 | `[--party <name>]` |
-| `test/07-setup-3rdparty-branch.sh` | 3rd party dev ブランチ作成 | `--party <name> [--branch <name>]` |
-| `test/08-add-3rdparty-commits.sh` | 3rd party コミット追加 | `--party <name> [--branch <name>]` |
-| `test/09-create-3rdparty-pr.sh` | 3rd party PR 作成 | `--party <name> [--branch <name>]` |
-| `test/10-download-artifact.sh` | CI artifact ダウンロード | `--party <name> --pr <number>` |
+| `test/01-setup-internal.sh` | Create internal repository with initial commits | none |
+| `test/02-add-commits.sh` | Add development commits (repeatable) | `[milestone-tag]` |
+| `test/03-generate-sync-conf.sh` | Generate `config/sync.conf` | none |
+| `test/04-create-party-repo.sh` | Create 3rd party repo and generate party.conf | `--party <name> --repo <repo-name>` |
+| `test/05-verify-delivery.sh` | Verify delivery contents | `--party <name>` |
+| `test/06-show-tags.sh` | Display tag list | `[--party <name>]` |
+| `test/07-setup-3rdparty-branch.sh` | Create 3rd party dev branch | `--party <name> [--branch <name>]` |
+| `test/08-add-3rdparty-commits.sh` | Add 3rd party commits | `--party <name> [--branch <name>]` |
+| `test/09-create-3rdparty-pr.sh` | Create 3rd party PR | `--party <name> [--branch <name>]` |
+| `test/10-download-artifact.sh` | Download CI artifact | `--party <name> --pr <number>` |

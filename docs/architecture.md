@@ -1,55 +1,56 @@
-# アーキテクチャ
+# Architecture
 
-## システム構成図
+## System Diagram
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
-│ GitHub Enterprise (社内)                                         │
+│ GitHub Enterprise (internal)                                     │
 │ github.your-company.com                                          │
 │                                                                  │
 │  org/internal-monorepo                                           │
 │  ├── main                                                        │
-│  │     └── replica/last-sync タグ（同期起点）                     │
-│  │     └── replica/sync-* タグ（同期履歴、任意）                  │
+│  │     └── replica/last-sync tag (sync origin)                  │
+│  │     └── replica/sync-* tags (sync history, optional)         │
 │  │                                                               │
-│  └── external/3rdparty-pr-* ブランチ（外部PR取り込み用）          │
+│  └── external/3rdparty-pr-* branches (for incorporating         │
+│                                        external PRs)            │
 │                                                                  │
 │  .github/workflows/sync-replica.yml                              │
-│    └── milestone/* タグをトリガーに sync-to-replica.sh を実行    │
+│    └── triggered by milestone/* tags, runs sync-to-replica.sh   │
 └────────────────────┬────────────────────────────────────────────┘
                      │
-         [B] マイルストーン同期          [C] 外部PR取り込み
-         squash + author=Bot             patch + meta を受け取り
+         [B] Milestone sync              [C] External PR incorporation
+         squash + author=Bot             receive patch + meta
          (--mode pr/direct/patch)        apply-external-pr.sh
                      │                             ▲
                      ▼                             │
 ┌─────────────────────────────────────────────────────────────────┐
-│ github.com (社外レプリカ)                                         │
+│ github.com (external replica)                                    │
 │                                                                  │
 │  your-org/replica                                                │
-│  ├── main          ← 社内同期でのみ更新（Branch Protection）      │
-│  │                                                               │
-│  └── 3rdparty/foo  ← 3rd party の開発ブランチ                    │
+│  ├── main          ← updated only by internal sync              │
+│  │                   (Branch Protection)                        │
+│  └── 3rdparty/foo  ← 3rd party development branch               │
 │          └── feature/xxx                                         │
 │                  └── PR → main                                   │
 │                                                                  │
 │  .github/workflows/pr-to-internal.yml                            │
-│    └── PR 作成・更新時に patch + meta を Artifact として保存      │
+│    └── saves patch + meta as Artifact on PR open/update         │
 └─────────────────────────────────────────────────────────────────┘
 ```
 
-## データフロー
+## Data Flow
 
-### [B] マイルストーン同期
+### [B] Milestone Sync
 
 ```
-内部 repo (GHE)                          レプリカ (github.com)
+Internal repo (GHE)                      Replica (github.com)
 ────────────────                         ──────────────────────
 git diff
   replica/last-sync..HEAD
-  （除外パスを除く）
+  (excluding excluded paths)
         │
-        │ .patch ファイル
+        │ .patch file
         ▼
 git apply --3way
         │
@@ -57,69 +58,69 @@ git apply --3way
         │ author  = Platform Sync Bot
         │ message = "sync: milestone"
         ▼
-[mode=pr]     sync/YYYYMMDD ブランチ ──► PR → main
-[mode=direct] ─────────────────────────► main へ直接 push
-[mode=patch]  sync-patches/ に出力        （手動で apply）
+[mode=pr]     sync/YYYYMMDD branch ──► PR → main
+[mode=direct] ──────────────────────► push directly to main
+[mode=patch]  output to sync-patches/  (apply manually)
         │
         ▼
 git tag -f replica/last-sync HEAD
-git tag    replica/sync-YYYYMMDD（任意）
+git tag    replica/sync-YYYYMMDD (optional)
 ```
 
-### [C] 外部PR取り込み
+### [C] External PR Incorporation
 
 ```
-github.com                      社内担当者              GHE
-──────────                      ──────────              ───
-3rd party が PR 作成
+github.com                    Internal team              GHE
+──────────                    ─────────────              ───
+3rd party creates PR
         │
-CI が自動実行
+CI runs automatically
   pr-to-internal.yml
         │
-Artifact 生成
+Artifact generated
   pr-NNN.patch
   pr-NNN-meta.json
-        │                Artifact をダウンロード
-        │                        │
-        │                apply-external-pr.sh
-        │                  --patch / --meta
-        │                        │
-        │                git apply --3way ──────────────► external/3rdparty-pr-NNN
-        │                        │                        内部 PR 自動作成
-        │                        │
-        │                内部でレビュー・採用判断
-        │                        │
-        │                [全部採用] git cherry-pick
-        │                [部分採用] cherry-pick-partial.sh
-        │                [却下]    内部 PR Close
-        │                        │
-        │                notify-external-pr.sh
-        │                  --status accepted/partial/rejected
+        │              Download Artifact
+        │                      │
+        │              apply-external-pr.sh
+        │                --patch / --meta
+        │                      │
+        │              git apply --3way ──────────────► external/3rdparty-pr-NNN
+        │                      │                        auto-create internal PR
+        │                      │
+        │              internal review & acceptance decision
+        │                      │
+        │              [accept all]    git cherry-pick
+        │              [accept partial] cherry-pick-partial.sh
+        │              [reject]        close internal PR
+        │                      │
+        │              notify-external-pr.sh
+        │                --status accepted/partial/rejected
         ▼
-外部 PR にコメント
-[却下] Close
-[採用] 次回 milestone sync 後に Close
+Comment on external PR
+[rejected] Close
+[accepted] Close after next milestone sync
 ```
 
-## タグ設計
+## Tag Design
 
-| タグ名 | 場所 | 種別 | 役割 |
+| Tag Name | Location | Type | Purpose |
 |--------|------|------|------|
-| `replica/last-sync` | 内部 GHE | 可動 (`-f` で上書き) | 次回 diff の起点。sync 完了後に HEAD へ前進 |
-| `replica/sync-YYYYMMDD-HHMMSS` | 内部 GHE | 不変 | 各同期の記録（任意作成） |
-| `milestone/YYYY-QN` | 内部 GHE | 不変 | マイルストーク基点。CI のトリガーにも使用 |
+| `replica/last-sync` | Internal GHE | Moving (overwritten with `-f`) | Origin for next diff. Advances to HEAD after sync completes |
+| `replica/sync-YYYYMMDD-HHMMSS` | Internal GHE | Immutable | Record of each sync (optional) |
+| `milestone/YYYY-QN` | Internal GHE | Immutable | Milestone anchor. Also used as CI trigger |
 
-## レプリカの main ブランチ保護
+## Replica main Branch Protection
 
-github.com の `main` は社内同期 Bot のみが push できるよう Branch Protection を設定する。
+Set Branch Protection on `main` at github.com so that only the internal sync Bot can push.
 
 ```
 Branch protection rules (main):
   ✓ Restrict who can push to matching branches
-      → sync-bot のみ許可
+      → allow sync-bot only
   ✓ Require pull request reviews before merging
-      → sync PR を 3rd party がレビュー可能にする（任意）
+      → allow 3rd party to review sync PRs (optional)
 ```
 
-3rd party は `main` への直接 push を禁止され、
-自分の開発ブランチから PR を作成する形になる。
+3rd parties are prevented from pushing directly to `main`
+and must create PRs from their own development branches.
