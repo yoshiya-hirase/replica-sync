@@ -367,8 +367,8 @@ cd "$REPLICA_REPO"
 
 log "Fetching and updating replica..."
 git fetch "$REPLICA_REMOTE"
-git checkout "$REPLICA_BRANCH"
-git merge --ff-only "${REPLICA_REMOTE}/${REPLICA_BRANCH}"
+git checkout -f "$REPLICA_BRANCH"
+git reset --hard "${REPLICA_REMOTE}/${REPLICA_BRANCH}"
 
 if [[ "$MODE" == "pr" ]]; then
   SYNC_BRANCH="sync/${TIMESTAMP}"
