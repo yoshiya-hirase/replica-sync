@@ -414,15 +414,18 @@ if [[ "$MODE" == "pr" ]]; then
     | grep -qx "sync" \
     || gh label create "sync" --repo "$REPLICA_GH_REPO" --color "0075ca" --description "sync delivery from internal"
 
-  gh pr create \
+  PR_URL=$(gh pr create \
     --repo  "$REPLICA_GH_REPO" \
     --title "$COMMIT_MSG" \
     --body  "$(generate_pr_body)" \
     --base  "$REPLICA_BRANCH" \
-    --head  "$SYNC_BRANCH" \
-    --label "sync"
+    --head  "$SYNC_BRANCH")
 
-  ok "PR created"
+  # Apply label separately so a label failure does not abort tag advancement
+  gh pr edit "$PR_URL" --add-label "sync" --repo "$REPLICA_GH_REPO" \
+    || log "Warning: could not add label 'sync' to PR (non-fatal)"
+
+  ok "PR created: $PR_URL"
 
 elif [[ "$MODE" == "direct" ]]; then
   git push "$REPLICA_REMOTE" "$REPLICA_BRANCH"
