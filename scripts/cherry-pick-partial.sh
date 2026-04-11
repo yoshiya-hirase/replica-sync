@@ -36,8 +36,8 @@ COMMIT_MSG=""
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
-    --patch)   PATCH_FILE="$2"; shift 2 ;;
-    --meta)    META_FILE="$2";  shift 2 ;;
+    --patch)   PATCH_FILE="$(cd "$(dirname "$2")" && pwd)/$(basename "$2")"; shift 2 ;;
+    --meta)    META_FILE="$(cd "$(dirname "$2")" && pwd)/$(basename "$2")";  shift 2 ;;
     --message) COMMIT_MSG="$2"; shift 2 ;;
     --paths)
       shift
