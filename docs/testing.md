@@ -417,6 +417,16 @@ rm -rf <TEST_DIR>/internal <TEST_DIR>/acme <TEST_DIR>/beta
 gh repo delete <GITHUB_USER>/test-internal-monorepo --yes
 gh repo delete <GITHUB_USER>/test-replica-acme --yes
 gh repo delete <GITHUB_USER>/test-replica-beta --yes
+```
+
+> **`gh repo delete` で HTTP 403 が出る場合:**
+> `gh` トークンに `delete_repo` スコープが付与されていない。以下を実行してスコープを追加し、再認証する:
+> ```bash
+> gh auth refresh -h github.com -s delete_repo
+> ```
+> ブラウザが開くので認証を完了させてから、`gh repo delete` を再実行する。
+
+```bash
 
 # 生成された設定ファイルを削除
 rm -f config/sync.conf
