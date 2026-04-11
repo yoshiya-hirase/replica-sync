@@ -31,7 +31,7 @@ CONFIG_FILE="${SCRIPT_DIR}/../config/sync.conf"
 source "$CONFIG_FILE"
 
 # Defaults for optional config values (prevents -u errors when unset)
-[[ -v EXCLUDE_PATHS ]] || EXCLUDE_PATHS=()
+declare -p EXCLUDE_PATHS >/dev/null 2>&1 || EXCLUDE_PATHS=()
 : "${PATCH_OUTPUT_DIR:=./sync-patches}"
 
 log() { echo -e "\033[1;34m[sync]\033[0m $*"; }
