@@ -61,12 +61,16 @@ build_exclude_args() {
 cd "$INTERNAL_REPO"
 build_exclude_args
 
-git rev-parse --verify "refs/heads/${PUBLISH_BRANCH}" >/dev/null 2>&1 \
-  || die "Publish branch '$PUBLISH_BRANCH' not found.\n" \
+# Fetch to ensure publish branch reflects latest remote state (e.g. after PR merge)
+git fetch "$INTERNAL_REMOTE"
+git merge --ff-only "${INTERNAL_REMOTE}/main"
+
+git rev-parse --verify "refs/remotes/${INTERNAL_REMOTE}/${PUBLISH_BRANCH}" >/dev/null 2>&1 \
+  || die "Publish branch '$PUBLISH_BRANCH' not found on remote.\n" \
          "Run initial setup first:\n" \
          "  ./scripts/init-replica.sh <start-tag>"
 
-PUBLISH_HEAD=$(git rev-parse "$PUBLISH_BRANCH")
+PUBLISH_HEAD=$(git rev-parse "${INTERNAL_REMOTE}/${PUBLISH_BRANCH}")
 INTERNAL_HEAD=$(git rev-parse HEAD)
 
 if [[ "$PUBLISH_HEAD" == "$INTERNAL_HEAD" ]]; then
@@ -96,7 +100,7 @@ log "Patch size: $(wc -l < "$PATCH_FILE") lines"
 
 # ── Step 3: Create sync branch based on publish ───────────────
 log "Creating temporary worktree..."
-git worktree add "$WORK_DIR" -b "$SYNC_BRANCH" "$PUBLISH_BRANCH"
+git worktree add "$WORK_DIR" -b "$SYNC_BRANCH" "${INTERNAL_REMOTE}/${PUBLISH_BRANCH}"
 
 # ── Step 4: Apply patch and create squash commit ──────────────
 cd "$WORK_DIR"

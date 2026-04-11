@@ -229,12 +229,15 @@ APPLY_TEMPLATE
 # ── Step 1: Pre-flight checks ─────────────────────────────────
 cd "$INTERNAL_REPO"
 
-git rev-parse --verify "refs/heads/${PUBLISH_BRANCH}" >/dev/null 2>&1 \
-  || die "Publish branch '$PUBLISH_BRANCH' not found.\n" \
+# Fetch to ensure publish branch reflects latest remote state (e.g. after PR merge)
+git fetch "$INTERNAL_REMOTE"
+
+git rev-parse --verify "refs/remotes/${INTERNAL_REMOTE}/${PUBLISH_BRANCH}" >/dev/null 2>&1 \
+  || die "Publish branch '$PUBLISH_BRANCH' not found on remote.\n" \
          "Run initial setup first:\n" \
          "  ./scripts/init-replica.sh <start-tag>"
 
-PUBLISH_HEAD=$(git rev-parse "$PUBLISH_BRANCH")
+PUBLISH_HEAD=$(git rev-parse "${INTERNAL_REMOTE}/${PUBLISH_BRANCH}")
 
 # Determine delivery base: last-sync tag (subsequent) or publish root (first)
 FIRST_DELIVERY=false
@@ -242,7 +245,7 @@ if git rev-parse --verify "$PARTY_SYNC_TAG" >/dev/null 2>&1; then
   LAST_SYNC_SHA=$(git rev-parse "$PARTY_SYNC_TAG")
 else
   # First delivery: base is the empty root commit of the publish branch
-  LAST_SYNC_SHA=$(git rev-list --max-parents=0 "$PUBLISH_BRANCH")
+  LAST_SYNC_SHA=$(git rev-list --max-parents=0 "${INTERNAL_REMOTE}/${PUBLISH_BRANCH}")
   FIRST_DELIVERY=true
   log "First delivery for party '${PARTY}' (no last-sync tag found)"
 fi
