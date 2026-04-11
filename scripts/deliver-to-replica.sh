@@ -203,14 +203,23 @@ apply_bootstrap() {
   fi
 }
 
+apply_patch() {
+  if [[ "$FIRST_DELIVERY" == "true" ]]; then
+    # First delivery: clear working tree before applying so existing files
+    # (e.g. GitHub-initialized README) do not cause false conflicts.
+    log "First delivery: clearing working tree before patch apply..."
+    git rm -rf . --quiet
+  fi
+  log "Applying patch..."
+  git apply --whitespace=nowarn "$PATCH_FILE" \
+    || die "Patch apply failed. Resolve conflicts and re-run."
+}
+
 if [[ "$MODE" == "pr" ]]; then
   log "Creating branch: $SYNC_BRANCH"
   git checkout -b "$SYNC_BRANCH"
 
-  log "Applying patch..."
-  git apply --3way --whitespace=nowarn "$PATCH_FILE" \
-    || die "Patch apply failed. Resolve conflicts and re-run."
-
+  apply_patch
   apply_bootstrap
 
   git add -A
@@ -235,10 +244,7 @@ elif [[ "$MODE" == "direct" ]]; then
   log "Applying directly to main..."
   git checkout "$REPLICA_BRANCH"
 
-  log "Applying patch..."
-  git apply --3way --whitespace=nowarn "$PATCH_FILE" \
-    || die "Patch apply failed. Resolve conflicts and re-run."
-
+  apply_patch
   apply_bootstrap
 
   git add -A
