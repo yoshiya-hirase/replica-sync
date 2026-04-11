@@ -24,7 +24,7 @@ jobs:
     # sync/* branches are internal delivery PRs — skip them
     if: ${{ !startsWith(github.head_ref, 'sync/') }}
     permissions:
-      pull-requests: read
+      pull-requests: write
       contents: read
 
     steps:
