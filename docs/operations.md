@@ -743,8 +743,60 @@ jobs:
 - [ ] `config/party/<party>.conf` を作成
 - [ ] github.com に空のレプリカ repo を作成（push モードの場合）
 - [ ] `deliver-to-replica.sh --party <name> "initial: YYYY-QN"` を実行
-- [ ] レプリカの `main` に Branch Protection を設定（Bot のみ push 許可）
+- [ ] レプリカの `main` に Branch Protection または Ruleset を設定（下記参照）
 - [ ] 3rd party に招待を送付
+
+#### レプリカ `main` ブランチの保護設定
+
+3rd party が `main` へ直接 push したり、PR をマージしてしまわないようにするための設定。
+2 つの方法がある。
+
+---
+
+##### 方法 1: Branch Protection Rules（簡易）
+
+GitHub リポジトリの `Settings` → `Branches` → `Add branch protection rule` で `main` を対象に設定する。
+
+| 設定項目 | 推奨値 | 目的 |
+|---|---|---|
+| Require a pull request before merging | ✅ オン | 直接 push を禁止 |
+| Required number of approvals | 2 以上（承認者が揃わない値） | 事実上マージ不能にする |
+| Do not allow bypassing the above settings | ✅ オン | 管理者もルールに従う |
+
+**制限**: Branch Protection Rules はブランチ名パターンで適用対象を分けられないため、
+`sync/*` ブランチ（`deliver-to-replica.sh` が作成するデリバリー PR）にも同じルールが適用される。
+デリバリー PR は Bot が push するため、Bot アカウントを `Bypass list` に追加するか、
+方法 2 の Ruleset を使う。
+
+---
+
+##### 方法 2: Rulesets（推奨・より厳密）
+
+GitHub リポジトリの `Settings` → `Rules` → `Rulesets` → `New branch ruleset` で設定する。
+
+**Ruleset 1: `main` 直接 push 禁止**
+
+| 項目 | 設定値 |
+|---|---|
+| Name | `protect-main` |
+| Enforcement | Active |
+| Target branches | `main` |
+| Restrict creations | ✅ |
+| Restrict deletions | ✅ |
+| Require a pull request before merging | ✅、required approvals: 2 以上 |
+| Block force pushes | ✅ |
+| Bypass list | Bot アカウント（`deliver-to-replica.sh` が使う GitHub ユーザー）を追加 |
+
+**Ruleset 2: `sync/*` PR のマージ許可（Bypass 不要の場合は省略可）**
+
+Ruleset の `Bypass list` に Bot アカウントを追加することで、
+`deliver-to-replica.sh` による `sync/*` → `main` のマージは Bot が行えるようになる。
+3rd party ユーザーは `main` への直接 push もマージもできない。
+
+**Rulesets の利点**:
+- ブランチパターン・actor（ユーザー/チーム）単位で細かく制御できる
+- 複数 Ruleset の組み合わせが可能
+- Organization レベルでの一括適用もできる（Organization Rulesets）
 
 ### マイルストーン同期
 
@@ -758,7 +810,7 @@ jobs:
 - [ ] `--output push --mode pr` の場合: 3rd party が sync PR をレビュー・マージ
 - [ ] `--output push --mode direct` の場合: push 完了で完了
 - [ ] `--output patch` の場合: patch / meta.json / apply.sh を 3rd party へ送付
-- [ ] `--output patch` の場合: 適用確認後に `replica/<party>/last-sync` を手動更新
+- [ ] `--output patch` の場合: タグはパッチセット生成時に自動更新される
 
 ### 外部PR取り込み
 
