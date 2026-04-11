@@ -71,8 +71,8 @@ note: ${MESSAGE}"
 cd "$INTERNAL_REPO"
 build_exclude_args
 
-git rev-parse --verify "$START_TAG" >/dev/null 2>&1 \
-  || die "Tag '$START_TAG' not found in internal repo"
+git rev-parse --verify "refs/tags/${START_TAG}" >/dev/null 2>&1 \
+  || die "'${START_TAG}' is not a tag. Specify a tag (e.g. milestone/v1), not a branch."
 
 git rev-parse --verify "refs/heads/${PUBLISH_BRANCH}" >/dev/null 2>&1 \
   && die "Publish branch '${PUBLISH_BRANCH}' already exists.\n" \
