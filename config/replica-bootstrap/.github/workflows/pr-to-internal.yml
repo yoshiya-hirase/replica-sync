@@ -74,6 +74,7 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
+          COMMENT="**This PR is for upstream patch generation only — do not merge.**"$'\n'"The diff has been forwarded to the upstream team for review. This PR will be closed after the upstream review process is complete."
           gh pr comment ${{ github.event.pull_request.number }} \
             --repo ${{ github.repository }} \
-            --body "差分パッチを生成しました。社内レビュープロセスに転送中です。結果はレビュー完了後にコメントで通知されます。"
+            --body "$COMMENT"
