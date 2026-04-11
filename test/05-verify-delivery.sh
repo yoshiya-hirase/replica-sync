@@ -51,7 +51,8 @@ trap 'rm -rf "$PUBLISH_EXPORT" "$PARTY_EXPORT"' EXIT
 
 log "Exporting publish branch content..."
 cd "$INTERNAL_REPO"
-git archive publish | tar -x -C "$PUBLISH_EXPORT"
+git fetch "$INTERNAL_REMOTE"
+git archive "${INTERNAL_REMOTE}/publish" | tar -x -C "$PUBLISH_EXPORT"
 
 log "Exporting party repo content..."
 cd "$REPLICA_REPO"
