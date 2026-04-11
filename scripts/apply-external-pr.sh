@@ -110,6 +110,12 @@ PR_EXISTS=$(GH_HOST="$GH_HOST" gh pr list \
 if [[ -n "$PR_EXISTS" ]]; then
   ok "Existing internal PR #${PR_EXISTS} updated (push complete)"
 else
+  # Ensure the label exists
+  GH_HOST="$GH_HOST" gh label list --repo "${GH_ORG}/${GH_REPO}" --json name --jq '.[].name' \
+    | grep -qx "external-contribution" \
+    || GH_HOST="$GH_HOST" gh label create "external-contribution" \
+         --repo "${GH_ORG}/${GH_REPO}" --color "e4e669" --description "forwarded from external replica"
+
   INTERNAL_PR_URL=$(GH_HOST="$GH_HOST" gh pr create \
     --repo "${GH_ORG}/${GH_REPO}" \
     --title "[External] ${PR_TITLE}" \
@@ -128,8 +134,12 @@ ${PR_BODY}
 > This PR was auto-generated to review an external contribution internally.
 > After approval and merge, close the external PR (do not merge it there)." \
     --base main \
-    --head "$BRANCH" \
-    --label "external-contribution")
+    --head "$BRANCH")
+
+  GH_HOST="$GH_HOST" gh pr edit "$INTERNAL_PR_URL" \
+    --add-label "external-contribution" \
+    --repo "${GH_ORG}/${GH_REPO}" \
+    || log "Warning: could not add label 'external-contribution' (non-fatal)"
 
   ok "Internal PR created: ${INTERNAL_PR_URL}"
 fi
