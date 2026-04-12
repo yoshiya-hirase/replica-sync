@@ -45,6 +45,7 @@ chmod +x scripts/*.sh
 | `scripts/cherry-pick-partial.sh` | Selectively incorporate external PR changes |
 | `scripts/notify-external-pr.sh` | Notify external PR of acceptance decision |
 | `scripts/generate-party-onboarding.sh` | Generate onboarding package for a 3rd party |
+| `scripts/generate-upstream-setup.sh` | Generate setup package for the upstream monorepo |
 
 ## Dependencies
 

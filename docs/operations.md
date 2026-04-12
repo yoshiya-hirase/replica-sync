@@ -53,6 +53,7 @@ github.your-company.com                          github.com
 | `cherry-pick-partial.sh` | Internal | Selectively incorporate external PR changes |
 | `notify-external-pr.sh` | Internal | Notify external PR of acceptance decision |
 | `generate-party-onboarding.sh` | Internal | Generate onboarding package (zip) for a 3rd party |
+| `generate-upstream-setup.sh` | Standalone | Generate setup package (zip) to install replica-sync into an upstream monorepo |
 
 ---
 
