@@ -142,6 +142,73 @@ EXCLUDE_PATHS=(
 
 ---
 
+## [Pre-A] Installing replica-sync into the Upstream Monorepo
+
+`generate-upstream-setup.sh` generates a zip package that installs all replica-sync
+tooling under `replica-sync/` in the upstream monorepo.
+Run this script from the replica-sync repository, then send the zip to the upstream team
+(or extract it yourself if you are working directly in the monorepo).
+
+```bash
+# Minimal — scripts and config templates only
+./scripts/generate-upstream-setup.sh
+
+# Include GHE-side CI workflow (milestone tag → stage-publish auto-run)
+./scripts/generate-upstream-setup.sh --with-ci-workflow
+
+# Custom output directory
+./scripts/generate-upstream-setup.sh --with-ci-workflow --output-dir ./outbox
+```
+
+| Option | Description | Default |
+|---|---|---|
+| `--with-ci-workflow` | Include `.github/workflows/sync-replica.yml` | not included |
+| `--output-dir <dir>` | Where to write the zip | `./upstream-packages` |
+
+Output: `upstream-packages/upstream-setup-TIMESTAMP.zip`
+
+**Package contents:**
+
+```
+upstream-setup-TIMESTAMP/
+├── replica-sync/
+│   ├── SETUP.md                                    ← full setup and operations guide
+│   ├── scripts/                                    ← all 7 sync scripts
+│   ├── config/
+│   │   ├── sync.conf.example
+│   │   ├── party/party.conf.example
+│   │   └── replica-bootstrap/.github/workflows/
+│   │       └── pr-to-internal.yml                  ← CI workflow template for external replicas
+│   └── .gitignore-fragment                         ← patterns to add to .gitignore
+└── .github/workflows/
+    └── sync-replica.yml                            ← (--with-ci-workflow only)
+```
+
+**Installation in the upstream monorepo:**
+
+```bash
+# Extract at the monorepo root
+unzip upstream-setup-TIMESTAMP.zip -d /path/to/internal-monorepo
+
+# Add .gitignore entries
+cat replica-sync/.gitignore-fragment >> .gitignore
+
+# Make scripts executable
+chmod +x replica-sync/scripts/*.sh
+
+# Commit
+git add replica-sync/ .gitignore
+git add .github/workflows/sync-replica.yml   # if --with-ci-workflow was used
+git commit -m "chore: add replica-sync tooling"
+```
+
+After installation, all scripts are invoked from the monorepo root with the
+`replica-sync/` prefix (e.g. `./replica-sync/scripts/stage-publish.sh`).
+The `SETUP.md` inside the package contains the complete guide from configuration
+through the full sync loop.
+
+---
+
 ## [A] publish Branch Initialization
 
 ### Prerequisites
