@@ -202,8 +202,47 @@ git add .github/workflows/sync-replica.yml   # if --with-ci-workflow was used
 git commit -m "chore: add replica-sync tooling"
 ```
 
-After installation, all scripts are invoked from the monorepo root with the
-`replica-sync/` prefix (e.g. `./replica-sync/scripts/stage-publish.sh`).
+**Resulting directory structure in the upstream monorepo after installation:**
+
+```
+internal-monorepo/                     ← monorepo root
+├── .github/
+│   └── workflows/
+│       └── sync-replica.yml           ← (--with-ci-workflow only)
+├── replica-sync/                      ← all tooling lives here
+│   ├── SETUP.md
+│   ├── .gitignore-fragment
+│   ├── scripts/
+│   │   ├── init-replica.sh
+│   │   ├── stage-publish.sh
+│   │   ├── deliver-to-replica.sh
+│   │   ├── apply-external-pr.sh
+│   │   ├── cherry-pick-partial.sh
+│   │   ├── notify-external-pr.sh
+│   │   └── generate-party-onboarding.sh
+│   └── config/
+│       ├── sync.conf.example
+│       ├── sync.conf                  ← created manually (gitignored)
+│       ├── party/
+│       │   ├── party.conf.example
+│       │   └── acme.conf              ← created manually per party (gitignored)
+│       └── replica-bootstrap/
+│           └── .github/workflows/
+│               └── pr-to-internal.yml ← template deployed to external replicas
+├── services/                          ← monorepo source code (unchanged)
+└── .gitignore                         ← appended with .gitignore-fragment
+```
+
+Output directories created at runtime (gitignored, not committed):
+```
+replica-sync/sync-patches/             ← patch mode delivery output
+replica-sync/party-packages/           ← onboarding packages for 3rd parties
+```
+
+All scripts are self-contained under `replica-sync/` and are invoked from any
+working directory using the `replica-sync/scripts/` prefix
+(e.g. `./replica-sync/scripts/stage-publish.sh`). Scripts locate their config
+via `SCRIPT_DIR/../config/` (script-relative), not the caller's working directory.
 The `SETUP.md` inside the package contains the complete guide from configuration
 through the full sync loop.
 
