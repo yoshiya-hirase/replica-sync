@@ -1,49 +1,54 @@
 #!/usr/bin/env bash
 # generate-upstream-setup.sh
 #
-# Generates a setup package to install in the upstream (internal) monorepo.
-# Extract the zip at the monorepo root — all tooling lands under replica-sync/.
-# An optional GHE-side CI workflow lands at .github/workflows/sync-replica.yml.
+# Builds the replica-sync tooling package and either:
+#   (default)        generates a zip to send / extract manually
+#   --install-to     installs directly into a target monorepo (fresh install or upgrade)
+#
+# On upgrade (--install-to with an existing replica-sync installation):
+#   - Scripts and config templates are always overwritten  (they are code)
+#   - sync.conf and party/*.conf are preserved             (they are user config)
+#   - .gitignore is updated only if the fragment is not yet present
 #
 # Usage:
-#   # Minimal
-#   ./scripts/generate-upstream-setup.sh
+#   # Generate zip
+#   ./scripts/generate-upstream-setup.sh [--with-ci-workflow] [--output-dir DIR]
 #
-#   # Include GHE-side CI workflow (milestone tag → stage-publish auto-run)
-#   ./scripts/generate-upstream-setup.sh --with-ci-workflow
-#
-#   # Custom output directory
-#   ./scripts/generate-upstream-setup.sh --output-dir ./outbox
-#
-# Installation (in the upstream monorepo):
-#   unzip upstream-setup-TIMESTAMP.zip -d /path/to/internal-monorepo
-#   echo "replica-sync/config/sync.conf"       >> /path/to/internal-monorepo/.gitignore
-#   echo "replica-sync/config/party/*.conf"    >> /path/to/internal-monorepo/.gitignore
-#   echo "replica-sync/party-packages/"        >> /path/to/internal-monorepo/.gitignore
-#   chmod +x /path/to/internal-monorepo/replica-sync/scripts/*.sh
+#   # Install / upgrade directly
+#   ./scripts/generate-upstream-setup.sh --install-to /path/to/internal-monorepo
+#   ./scripts/generate-upstream-setup.sh --install-to /path/to/internal-monorepo \
+#     --with-ci-workflow
 #
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 REPO_ROOT="${SCRIPT_DIR}/.."
 
-ok()  { echo -e "\033[1;32m[  ok ]\033[0m $*"; }
-die() { echo -e "\033[1;31m[ err ]\033[0m $*" >&2; exit 1; }
-log() { echo -e "\033[1;34m[ pkg ]\033[0m $*"; }
+ok()   { echo -e "\033[1;32m[  ok ]\033[0m $*"; }
+skip() { echo -e "\033[1;33m[ skip]\033[0m $*"; }
+die()  { echo -e "\033[1;31m[ err ]\033[0m $*" >&2; exit 1; }
+log()  { echo -e "\033[1;34m[ pkg ]\033[0m $*"; }
 
 # ── Argument parsing ───────────────────────────────────────────
 WITH_CI_WORKFLOW="false"
 OUTPUT_DIR="./upstream-packages"
+INSTALL_TO=""
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --with-ci-workflow) WITH_CI_WORKFLOW="true"; shift ;;
     --output-dir)       OUTPUT_DIR="$2";         shift 2 ;;
+    --install-to)       INSTALL_TO="$2";         shift 2 ;;
     *) die "Unknown option: $1" ;;
   esac
 done
 
-# ── Setup ──────────────────────────────────────────────────────
+if [[ -n "$INSTALL_TO" ]]; then
+  [[ -d "$INSTALL_TO" ]] || die "Target directory not found: $INSTALL_TO"
+  INSTALL_TO="$(cd "$INSTALL_TO" && pwd)"   # absolute path
+fi
+
+# ── Build assets into a temp work dir ─────────────────────────
 TIMESTAMP=$(date +%Y%m%d-%H%M%S)
 PACKAGE_NAME="upstream-setup-${TIMESTAMP}"
 WORK_DIR="${OUTPUT_DIR}/${PACKAGE_NAME}"
@@ -54,7 +59,7 @@ mkdir -p \
   "${RS_DIR}/config/party" \
   "${RS_DIR}/config/replica-bootstrap/.github/workflows"
 
-# ── Copy scripts ───────────────────────────────────────────────
+# scripts
 SCRIPTS=(
   init-replica.sh
   stage-publish.sh
@@ -69,18 +74,18 @@ for s in "${SCRIPTS[@]}"; do
   [[ -f "$src" ]] || die "Script not found: $src"
   cp "$src" "${RS_DIR}/scripts/${s}"
 done
-log "Copied ${#SCRIPTS[@]} scripts"
+log "Built ${#SCRIPTS[@]} scripts"
 
-# ── Copy config templates ──────────────────────────────────────
+# config templates
 cp "${REPO_ROOT}/config/sync.conf.example" \
    "${RS_DIR}/config/sync.conf.example"
 cp "${REPO_ROOT}/config/party/party.conf.example" \
    "${RS_DIR}/config/party/party.conf.example"
 cp "${REPO_ROOT}/config/replica-bootstrap/.github/workflows/pr-to-internal.yml" \
    "${RS_DIR}/config/replica-bootstrap/.github/workflows/pr-to-internal.yml"
-log "Copied config templates"
+log "Built config templates"
 
-# ── Generate .gitignore-fragment ───────────────────────────────
+# .gitignore-fragment
 cat > "${RS_DIR}/.gitignore-fragment" << 'EOF'
 # replica-sync: local config (contain paths and credentials — do not commit)
 replica-sync/config/sync.conf
@@ -93,9 +98,9 @@ replica-sync/sync-patches/
 replica-sync/test-patches/
 replica-sync/test-artifacts/
 EOF
-log "Generated .gitignore-fragment"
+log "Built .gitignore-fragment"
 
-# ── Generate CI workflow (optional) ───────────────────────────
+# CI workflow (optional)
 if [[ "$WITH_CI_WORKFLOW" == "true" ]]; then
   mkdir -p "${WORK_DIR}/.github/workflows"
   cat > "${WORK_DIR}/.github/workflows/sync-replica.yml" << 'CIEOF'
@@ -150,15 +155,10 @@ jobs:
           ./replica-sync/scripts/stage-publish.sh \
             "sync: ${{ github.ref_name }}"
 CIEOF
-  log "Generated .github/workflows/sync-replica.yml"
+  log "Built .github/workflows/sync-replica.yml"
 fi
 
-# ── Generate SETUP.md ──────────────────────────────────────────
-CI_NOTE=""
-if [[ "$WITH_CI_WORKFLOW" == "true" ]]; then
-  CI_NOTE=" and the GHE-side CI workflow"
-fi
-
+# SETUP.md
 cat > "${RS_DIR}/SETUP.md" << SETUPEOF
 # Upstream Sync Setup Guide
 
@@ -231,6 +231,25 @@ $(if [[ "$WITH_CI_WORKFLOW" == "true" ]]; then
 echo 'git add .github/workflows/sync-replica.yml'
 fi)
 git commit -m "chore: add replica-sync tooling"
+\`\`\`
+
+---
+
+## Upgrading
+
+To upgrade replica-sync tooling to a newer version, regenerate the package
+and re-install using \`--install-to\`. This overwrites scripts and templates
+while preserving your \`sync.conf\` and \`config/party/*.conf\`.
+
+\`\`\`bash
+# In the replica-sync project:
+./scripts/generate-upstream-setup.sh --install-to /path/to/internal-monorepo
+
+# Then in the monorepo:
+cd /path/to/internal-monorepo
+git diff replica-sync/   # review what changed
+git add replica-sync/ .gitignore
+git commit -m "chore: upgrade replica-sync tooling"
 \`\`\`
 
 ---
@@ -554,19 +573,132 @@ All scripts load \`replica-sync/config/sync.conf\` automatically.
 Run all scripts from the **monorepo root**.
 SETUPEOF
 
-log "Generated SETUP.md"
+log "Built SETUP.md"
 
-# ── Create zip archive ─────────────────────────────────────────
-ZIP_FILE="${OUTPUT_DIR}/${PACKAGE_NAME}.zip"
-(cd "$OUTPUT_DIR" && zip -r "${PACKAGE_NAME}.zip" "${PACKAGE_NAME}" -x "*.DS_Store")
-rm -rf "$WORK_DIR"
+# ── Install directly or package as zip ────────────────────────
+if [[ -n "$INSTALL_TO" ]]; then
+  # ── Direct install / upgrade ──────────────────────────────────
+  RS_TARGET="${INSTALL_TO}/replica-sync"
+  IS_UPGRADE="false"
+  [[ -d "$RS_TARGET" ]] && IS_UPGRADE="true"
 
-ok "Package created: ${ZIP_FILE}"
-echo ""
-echo "Contents:"
-unzip -l "$ZIP_FILE" | awk 'NR>3 && /\S/ && !/^-/ && !/files/ {print "  " $NF}'
-echo ""
-echo "Installation (in the upstream monorepo):"
-echo "  unzip ${ZIP_FILE} -d /path/to/internal-monorepo"
-echo "  cat replica-sync/.gitignore-fragment >> /path/to/internal-monorepo/.gitignore"
-echo "  chmod +x /path/to/internal-monorepo/replica-sync/scripts/*.sh"
+  if [[ "$IS_UPGRADE" == "true" ]]; then
+    echo ""
+    echo "Upgrading existing installation at: ${INSTALL_TO}"
+  else
+    echo ""
+    echo "Installing into: ${INSTALL_TO}"
+    mkdir -p "${RS_TARGET}/config/party"
+  fi
+
+  UPDATED=0
+  SKIPPED=0
+
+  # Helper: copy a file, always overwrite
+  install_file() {
+    local src="$1" dst="$2"
+    mkdir -p "$(dirname "$dst")"
+    cp "$src" "$dst"
+    UPDATED=$(( UPDATED + 1 ))
+  }
+
+  # Helper: copy a file only if the destination does not yet exist
+  install_new_only() {
+    local src="$1" dst="$2" label="$3"
+    if [[ -f "$dst" ]]; then
+      skip "Preserved user config: ${label}"
+      SKIPPED=$(( SKIPPED + 1 ))
+    else
+      mkdir -p "$(dirname "$dst")"
+      cp "$src" "$dst"
+      log "Created: ${label}"
+      UPDATED=$(( UPDATED + 1 ))
+    fi
+  }
+
+  # Always overwrite: scripts
+  for s in "${RS_DIR}/scripts/"*.sh; do
+    install_file "$s" "${RS_TARGET}/scripts/$(basename "$s")"
+  done
+  chmod +x "${RS_TARGET}/scripts/"*.sh
+  log "Installed scripts (${#SCRIPTS[@]})"
+
+  # Always overwrite: config templates and bootstrap files
+  install_file "${RS_DIR}/config/sync.conf.example" \
+               "${RS_TARGET}/config/sync.conf.example"
+  install_file "${RS_DIR}/config/party/party.conf.example" \
+               "${RS_TARGET}/config/party/party.conf.example"
+  install_file "${RS_DIR}/config/replica-bootstrap/.github/workflows/pr-to-internal.yml" \
+               "${RS_TARGET}/config/replica-bootstrap/.github/workflows/pr-to-internal.yml"
+  install_file "${RS_DIR}/SETUP.md" \
+               "${RS_TARGET}/SETUP.md"
+  install_file "${RS_DIR}/.gitignore-fragment" \
+               "${RS_TARGET}/.gitignore-fragment"
+  log "Installed config templates, bootstrap workflow, SETUP.md"
+
+  # Preserve on upgrade: sync.conf
+  install_new_only "${RS_DIR}/config/sync.conf.example" \
+                   "${RS_TARGET}/config/sync.conf" \
+                   "replica-sync/config/sync.conf"
+
+  # Optional: CI workflow (always overwrite if present in package)
+  if [[ "$WITH_CI_WORKFLOW" == "true" ]]; then
+    install_file "${WORK_DIR}/.github/workflows/sync-replica.yml" \
+                 "${INSTALL_TO}/.github/workflows/sync-replica.yml"
+    log "Installed .github/workflows/sync-replica.yml"
+  fi
+
+  # .gitignore: append fragment only if not already present
+  GITIGNORE="${INSTALL_TO}/.gitignore"
+  if [[ -f "$GITIGNORE" ]] && grep -qF "replica-sync/config/sync.conf" "$GITIGNORE"; then
+    skip "Preserved .gitignore (fragment already present)"
+    SKIPPED=$(( SKIPPED + 1 ))
+  else
+    cat "${RS_DIR}/.gitignore-fragment" >> "$GITIGNORE"
+    log "Updated .gitignore"
+    UPDATED=$(( UPDATED + 1 ))
+  fi
+
+  # Clean up work dir
+  rm -rf "$WORK_DIR"
+
+  echo ""
+  if [[ "$IS_UPGRADE" == "true" ]]; then
+    ok "Upgrade complete: ${UPDATED} files updated, ${SKIPPED} preserved"
+    echo ""
+    echo "Review changes before committing:"
+    echo "  cd ${INSTALL_TO}"
+    echo "  git diff replica-sync/"
+    echo "  git add replica-sync/"
+    [[ "$WITH_CI_WORKFLOW" == "true" ]] && \
+      echo "  git add .github/workflows/sync-replica.yml"
+    echo "  git commit -m \"chore: upgrade replica-sync tooling\""
+  else
+    ok "Install complete: ${UPDATED} files installed, ${SKIPPED} already existed"
+    echo ""
+    echo "Next steps:"
+    echo "  cd ${INSTALL_TO}"
+    echo "  \$EDITOR replica-sync/config/sync.conf"
+    echo "  git add replica-sync/ .gitignore"
+    [[ "$WITH_CI_WORKFLOW" == "true" ]] && \
+      echo "  git add .github/workflows/sync-replica.yml"
+    echo "  git commit -m \"chore: add replica-sync tooling\""
+  fi
+
+else
+  # ── Zip mode ─────────────────────────────────────────────────
+  mkdir -p "$OUTPUT_DIR"
+  ZIP_FILE="${OUTPUT_DIR}/${PACKAGE_NAME}.zip"
+  (cd "$OUTPUT_DIR" && zip -r "${PACKAGE_NAME}.zip" "${PACKAGE_NAME}" -x "*.DS_Store")
+  rm -rf "$WORK_DIR"
+
+  ok "Package created: ${ZIP_FILE}"
+  echo ""
+  echo "Contents:"
+  unzip -l "$ZIP_FILE" | awk 'NR>3 && /\S/ && !/^-/ && !/files/ {print "  " $NF}'
+  echo ""
+  echo "Installation (in the upstream monorepo):"
+  echo "  unzip ${ZIP_FILE} -d /path/to/internal-monorepo"
+  echo "  cat replica-sync/.gitignore-fragment >> /path/to/internal-monorepo/.gitignore"
+  echo "  chmod +x /path/to/internal-monorepo/replica-sync/scripts/*.sh"
+fi
