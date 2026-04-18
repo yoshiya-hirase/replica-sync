@@ -32,6 +32,31 @@ ok()  { echo -e "\033[1;32m[  ok ]\033[0m $*"; }
 die() { echo -e "\033[1;31m[ err ]\033[0m $*" >&2; exit 1; }
 log() { echo -e "\033[1;34m[ pkg ]\033[0m $*"; }
 
+usage() {
+  cat << 'USAGE'
+Usage: ./scripts/generate-upstream-setup.sh [options]
+
+Builds the replica-sync tooling package and either generates a zip or installs directly.
+
+Options:
+  --with-ci-workflow     Include sync-replica.yml (GHE-side CI workflow)
+  --output-dir <dir>     Output directory for the generated zip (default: ./upstream-packages)
+  --install-to <dir>     Install directly into an existing monorepo (skips zip generation)
+  -h, --help             Show this help message
+
+The --install-to directory must already exist (a pre-existing monorepo clone).
+
+Examples:
+  # Generate a zip package
+  ./scripts/generate-upstream-setup.sh
+  ./scripts/generate-upstream-setup.sh --with-ci-workflow --output-dir ./outbox
+
+  # Install directly into an existing monorepo
+  ./scripts/generate-upstream-setup.sh --install-to /path/to/internal-monorepo
+  ./scripts/generate-upstream-setup.sh --install-to /path/to/internal-monorepo --with-ci-workflow
+USAGE
+}
+
 # ── Argument parsing ───────────────────────────────────────────
 WITH_CI_WORKFLOW="false"
 OUTPUT_DIR="./upstream-packages"
@@ -42,12 +67,13 @@ while [[ $# -gt 0 ]]; do
     --with-ci-workflow) WITH_CI_WORKFLOW="true"; shift ;;
     --output-dir)       OUTPUT_DIR="$2";         shift 2 ;;
     --install-to)       INSTALL_TO="$2";         shift 2 ;;
-    *) die "Unknown option: $1" ;;
+    -h|--help)          usage; exit 0 ;;
+    *) die "Unknown option: $1\nRun with --help to see usage." ;;
   esac
 done
 
 if [[ -n "$INSTALL_TO" ]]; then
-  [[ -d "$INSTALL_TO" ]] || die "Target directory not found: $INSTALL_TO"
+  [[ -d "$INSTALL_TO" ]] || die "Target directory not found: $INSTALL_TO\n  The --install-to directory must already exist (this script installs into an existing monorepo).\n  Create the directory first, or check for a typo in the path."
   INSTALL_TO="$(cd "$INSTALL_TO" && pwd)"
 fi
 
@@ -589,16 +615,40 @@ skip() { echo -e "\033[1;33m[ skip]\033[0m \$*"; }
 die()  { echo -e "\033[1;31m[ err ]\033[0m \$*" >&2; exit 1; }
 log()  { echo -e "\033[1;34m[inst ]\033[0m \$*"; }
 
+usage() {
+  cat << 'USAGE'
+Usage: bash install.sh --target <monorepo-dir>
+
+Installs or upgrades replica-sync tooling into an existing monorepo directory.
+
+Options:
+  --target <dir>   Path to the target monorepo (must already exist)
+  -h, --help       Show this help message
+
+The target directory must be an existing directory (a pre-existing monorepo clone).
+This script will NOT create a new directory.
+
+What is overwritten vs preserved on upgrade:
+  Overwritten : scripts, config templates, SETUP.md, .gitignore-fragment
+  Preserved   : config/sync.conf, config/party/*.conf
+  .gitignore  : fragment appended only if not already present
+
+Examples:
+  bash install.sh --target /path/to/internal-monorepo
+USAGE
+}
+
 TARGET=""
 while [[ \$# -gt 0 ]]; do
   case "\$1" in
-    --target) TARGET="\$2"; shift 2 ;;
-    *) die "Unknown option: \$1\nUsage: \$0 --target /path/to/monorepo" ;;
+    --target)    TARGET="\$2"; shift 2 ;;
+    -h|--help)   usage; exit 0 ;;
+    *) die "Unknown option: \$1\nRun with --help to see usage." ;;
   esac
 done
 
-[[ -n "\$TARGET" ]] || die "Usage: \$0 --target /path/to/monorepo"
-[[ -d "\$TARGET" ]] || die "Target directory not found: \$TARGET"
+[[ -n "\$TARGET" ]] || { usage; exit 1; }
+[[ -d "\$TARGET" ]] || die "Target directory not found: \$TARGET\n  The --target directory must already exist (this script installs into an existing monorepo).\n  Create the directory first, or check for a typo in the path."
 TARGET="\$(cd "\$TARGET" && pwd)"
 
 RS_SRC="\${SCRIPT_DIR}/replica-sync"

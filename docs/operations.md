@@ -131,6 +131,9 @@ EXCLUDE_PATHS=(
 )
 ```
 
+These are **git pathspec patterns** (`:!<pattern>` notation) — not `.gitignore` patterns.
+See [B-4. Managing Excluded Paths](#b-4-managing-excluded-paths) for pattern rules.
+
 #### `config/party/<party>.conf` — Replica Repository (github.com)
 
 | Variable | Description | `[A] init` | `[B-1] stage` | `[B-2] deliver` | `[C] external` | Example |
@@ -596,6 +599,24 @@ EXCLUDE_PATHS=(
   "scripts/internal/"
 )
 ```
+
+#### Pattern Rules
+
+Entries are **git pathspec patterns** — passed to `git archive` and `git diff` as `:!<pattern>`.
+These are **not** `.gitignore` patterns.
+
+| Pattern | Effect |
+|---|---|
+| `services/internal-only/` | Exclude directory and all its contents (trailing `/` matches directories) |
+| `.internal/` | Exclude a top-level directory |
+| `scripts/internal/` | Exclude a subdirectory |
+| `**/*.secret` | Glob: exclude all files with `.secret` extension anywhere in the tree |
+| `docs/INTERNAL_*.md` | Glob: exclude files matching a prefix pattern in a specific directory |
+
+**Key differences from `.gitignore`:**
+- Patterns are repository-root-anchored by default
+- Negation (`!` prefix) is not supported
+- Comment lines (`#` prefix) are not supported — use shell comments outside the array
 
 ### B-5. Delivery Method Selection Guide
 

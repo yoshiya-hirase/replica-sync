@@ -24,6 +24,20 @@ SYNC_AUTHOR_NAME="Platform Sync Bot"
 SYNC_AUTHOR_EMAIL="sync-bot@your-company.com"
 
 # Paths excluded from replica sync (internal-only services, etc.)
+#
+# These are git pathspec patterns — NOT .gitignore patterns.
+# They are passed to `git archive` and `git diff` as `:!<pattern>`.
+#
+# Pattern rules:
+#   services/internal-only/   — exclude a directory and everything under it
+#                               (trailing slash matches directories)
+#   .internal/                — exclude a top-level directory
+#   scripts/internal/         — exclude a subdirectory
+#   "**/*.secret"             — glob: exclude all *.secret files anywhere in the tree
+#   "docs/INTERNAL_*.md"      — glob: exclude files matching a prefix pattern
+#
+# Unlike .gitignore, these patterns are repository-root-anchored and
+# do not support negation (! prefix) or comment lines (# prefix).
 EXCLUDE_PATHS=(
   "services/internal-only/"
   ".internal/"
