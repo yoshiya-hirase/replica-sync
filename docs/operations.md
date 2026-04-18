@@ -40,6 +40,131 @@ github.your-company.com                          github.com
 
 ---
 
+## Quick Start (Internal Monorepo Owner)
+
+This section covers the complete lifecycle for an internal team that owns the monorepo
+and is setting up 3rd party collaboration for the first time.
+
+### Step 0 — Install replica-sync tooling (once)
+
+```bash
+# In the replica-sync project:
+./scripts/generate-upstream-setup.sh --install-to /path/to/internal-monorepo
+# With GHE-side CI automation (milestone tag triggers stage-publish automatically):
+./scripts/generate-upstream-setup.sh --install-to /path/to/internal-monorepo --with-ci-workflow
+
+# In the monorepo:
+cd /path/to/internal-monorepo
+$EDITOR replica-sync/config/sync.conf       # set INTERNAL_REPO, GH_HOST, EXCLUDE_PATHS, etc.
+git add replica-sync/ .gitignore
+git commit -m "chore: add replica-sync tooling"
+```
+
+→ See [Pre-A] for detailed install and config options.
+
+---
+
+### Step 1 — Add a 3rd party (once per party)
+
+```bash
+# 1. Create the external replica repo on github.com (empty)
+
+# 2. Create per-party config
+cp replica-sync/config/party/party.conf.example replica-sync/config/party/acme.conf
+$EDITOR replica-sync/config/party/acme.conf   # set REPLICA_REPO, REPLICA_GH_REPO, etc.
+
+# 3. Generate and send onboarding package
+./replica-sync/scripts/generate-party-onboarding.sh \
+  --party acme \
+  --repo your-org/replica-acme \
+  --delivery-mode push   # or patch, or both
+# → sends acme-onboarding-TIMESTAMP.zip to the 3rd party
+
+# 4. Set up branch protection on the external replica (github.com)
+#    main branch: require PRs, only Bot can bypass
+```
+
+→ See [A-1] for publish branch setup and branch protection details.
+
+---
+
+### Step 2 — Initialize the publish branch (once per project)
+
+```bash
+# 1. Create a start tag in the internal monorepo
+git tag -a milestone/2024-Q1 -m "Start of 3rd party collaboration"
+git push origin milestone/2024-Q1
+
+# 2. Create the publish branch snapshot (GHE PR flow)
+./replica-sync/scripts/init-replica.sh milestone/2024-Q1
+# → opens GHE PR: init/TIMESTAMP → publish
+# → review: verify EXCLUDE_PATHS applied, author is Bot, single commit
+# → merge the PR
+
+# 3. Deliver the initial snapshot to each 3rd party
+./replica-sync/scripts/deliver-to-replica.sh --party acme "initial: 2024-Q1"
+# → opens a sync PR on the external replica; 3rd party reviews and merges
+```
+
+→ See [A-2] and [A-3] for detailed procedures.
+
+---
+
+### Step 3 — Milestone sync loop (repeat each milestone)
+
+```bash
+# Phase 1: Stage internal changes to publish branch
+git tag -a milestone/2024-Q2 -m "Q2 milestone"
+git push origin milestone/2024-Q2
+
+./replica-sync/scripts/stage-publish.sh "sync: 2024-Q2"
+# → opens GHE PR: sync/TIMESTAMP → publish
+# → review: verify diff, EXCLUDE_PATHS, Bot author
+# → merge the PR
+
+# Phase 2: Deliver to each 3rd party
+./replica-sync/scripts/deliver-to-replica.sh --party acme "sync: 2024-Q2"
+# repeat for each party
+```
+
+→ See [B] for full sync loop procedures including patch mode.
+
+---
+
+### Step 4 — Handle an incoming 3rd party PR
+
+```bash
+# 1. Download CI artifact from the external replica
+gh run list --repo your-org/replica-acme --workflow pr-to-internal.yml
+gh run download <run-id> --repo your-org/replica-acme --dir ./artifacts/
+
+# 2. Apply to internal branch
+./replica-sync/scripts/apply-external-pr.sh \
+  --party acme \
+  --patch artifacts/pr.patch \
+  --meta  artifacts/pr-meta.json
+# → opens internal PR on GHE for review
+
+# 3a. Accept all — cherry-pick after internal review
+git checkout main && git cherry-pick external/acme-pr-N
+
+# 3b. Accept partial — cherry-pick specific paths only
+./replica-sync/scripts/cherry-pick-partial.sh \
+  --patch artifacts/pr.patch \
+  --meta  artifacts/pr-meta.json \
+  --paths "services/api/"
+
+# 4. Notify the 3rd party of the decision
+./replica-sync/scripts/notify-external-pr.sh \
+  --party acme \
+  --meta  artifacts/pr-meta.json \
+  --status accepted   # accepted | partial | rejected
+```
+
+→ See [C] for full external PR procedures including patch mode and rejection flow.
+
+---
+
 ## Scripts Reference
 
 | Script | Environment | Purpose |
