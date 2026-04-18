@@ -30,6 +30,7 @@ chmod +x scripts/*.sh
 
 | Document | Contents |
 |---|---|
+| [docs/scripts.md](docs/scripts.md) | Script reference — all options and usage examples |
 | [docs/operations.md](docs/operations.md) | Detailed procedures and checklists for all operations |
 | [docs/architecture.md](docs/architecture.md) | System architecture and data flow |
 | [docs/decisions.md](docs/decisions.md) | Architecture Decision Records (ADR) |
@@ -39,13 +40,16 @@ chmod +x scripts/*.sh
 
 | Script | Purpose |
 |---|---|
-| `scripts/init-replica.sh` | Initialize replica (first-time setup) |
-| `scripts/sync-to-replica.sh` | Milestone sync |
-| `scripts/apply-external-pr.sh` | Apply external PR to internal repo |
-| `scripts/cherry-pick-partial.sh` | Selectively incorporate external PR changes |
-| `scripts/notify-external-pr.sh` | Notify external PR of acceptance decision |
+| `scripts/init-replica.sh` | [A] Initialize publish branch (first-time setup) |
+| `scripts/stage-publish.sh` | [B-1] Squash internal changes and create a GHE review PR |
+| `scripts/deliver-to-replica.sh` | [B-2] Deliver publish branch to the external replica |
+| `scripts/apply-external-pr.sh` | [C] Apply external PR patch to internal repo |
+| `scripts/cherry-pick-partial.sh` | [C] Selectively incorporate parts of an external PR |
+| `scripts/notify-external-pr.sh` | [C] Post review decision to external PR |
 | `scripts/generate-party-onboarding.sh` | Generate onboarding package for a 3rd party |
-| `scripts/generate-upstream-setup.sh` | Generate setup package for the upstream monorepo |
+| `scripts/generate-upstream-setup.sh` | Generate or install replica-sync tooling into upstream monorepo |
+
+See [docs/scripts.md](docs/scripts.md) for full option reference.
 
 ## Dependencies
 
