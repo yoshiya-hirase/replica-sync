@@ -144,86 +144,110 @@ EXCLUDE_PATHS=(
 
 ## [Pre-A] Installing replica-sync into the Upstream Monorepo
 
-`generate-upstream-setup.sh` generates a zip package that installs all replica-sync
-tooling under `replica-sync/` in the upstream monorepo.
-Run this script from the replica-sync repository, then send the zip to the upstream team
-(or extract it yourself if you are working directly in the monorepo).
+`generate-upstream-setup.sh` prepares the replica-sync tooling and either installs it
+directly into a target monorepo (`--install-to`) or packages it into a zip for manual
+distribution. Both paths use the same generated `install.sh` for consistent behavior.
 
-```bash
-# Generate a zip to send or extract manually
-./scripts/generate-upstream-setup.sh
-./scripts/generate-upstream-setup.sh --with-ci-workflow
-./scripts/generate-upstream-setup.sh --with-ci-workflow --output-dir ./outbox
-
-# Install directly into a monorepo (fresh install)
-./scripts/generate-upstream-setup.sh --install-to /path/to/internal-monorepo
-./scripts/generate-upstream-setup.sh --install-to /path/to/internal-monorepo \
-  --with-ci-workflow
-
-# Upgrade an existing installation (same command — detects existing install)
-./scripts/generate-upstream-setup.sh --install-to /path/to/internal-monorepo
-```
+### Options
 
 | Option | Description | Default |
 |---|---|---|
 | `--install-to <dir>` | Install/upgrade directly into the target monorepo | — (zip mode) |
-| `--with-ci-workflow` | Include `.github/workflows/sync-replica.yml` | not included |
+| `--with-ci-workflow` | Include `sync-replica.yml` GHE-side CI workflow | not included |
 | `--output-dir <dir>` | Where to write the zip (zip mode only) | `./upstream-packages` |
 
-**Zip mode** output: `upstream-packages/upstream-setup-TIMESTAMP.zip`
+### What gets installed where
 
-**Package contents:**
+`install.sh` copies files into the following locations in the target monorepo:
 
+| Source (in package) | Destination (in monorepo) | Notes |
+|---|---|---|
+| `replica-sync/scripts/*.sh` | `replica-sync/scripts/` | Executable; always overwritten |
+| `replica-sync/config/sync.conf.example` | `replica-sync/config/` | Always overwritten |
+| `replica-sync/config/party/party.conf.example` | `replica-sync/config/party/` | Always overwritten |
+| `replica-sync/config/replica-bootstrap/…/pr-to-internal.yml` | `replica-sync/config/replica-bootstrap/…/` | Always overwritten |
+| `replica-sync/SETUP.md` | `replica-sync/` | Always overwritten |
+| `replica-sync/.gitignore-fragment` | `replica-sync/` | Always overwritten |
+| `replica-sync/config/sync.conf.example` | `replica-sync/config/sync.conf` | **Created once; preserved on upgrade** |
+| `.github/workflows/sync-replica.yml` | `.github/workflows/sync-replica.yml` | `--with-ci-workflow` only; always overwritten |
+| — | `.gitignore` | Fragment appended only if not already present |
+
+`sync-replica.yml` is the only file that lands outside `replica-sync/` — it goes directly
+into the monorepo's `.github/workflows/` so GitHub Actions picks it up automatically.
+
+### Path 1: Direct install / upgrade via `--install-to`
+
+Use this when you have local access to the target monorepo (e.g. you maintain both repos).
+
+```bash
+# Fresh install
+./scripts/generate-upstream-setup.sh --install-to /path/to/internal-monorepo
+
+# With GHE-side CI workflow
+./scripts/generate-upstream-setup.sh \
+  --install-to /path/to/internal-monorepo \
+  --with-ci-workflow
+
+# Upgrade (same command — detects existing installation automatically)
+./scripts/generate-upstream-setup.sh --install-to /path/to/internal-monorepo
+```
+
+After install, the script prints the next steps. After upgrade:
+```bash
+cd /path/to/internal-monorepo
+git diff replica-sync/                        # review what changed
+git add replica-sync/ .github/workflows/      # stage everything
+git commit -m "chore: upgrade replica-sync tooling"
+```
+
+### Path 2: Zip + install.sh for remote distribution
+
+Use this when someone else owns the target monorepo and will perform the install.
+
+```bash
+# Generate zip
+./scripts/generate-upstream-setup.sh --with-ci-workflow --output-dir ./outbox
+# → outbox/upstream-setup-TIMESTAMP.zip
+```
+
+**Zip contents:**
 ```
 upstream-setup-TIMESTAMP/
+├── install.sh                                      ← run this with --target
 ├── replica-sync/
-│   ├── SETUP.md                                    ← full setup and operations guide
+│   ├── SETUP.md                                    ← full guide
 │   ├── scripts/                                    ← all 7 sync scripts
 │   ├── config/
 │   │   ├── sync.conf.example
 │   │   ├── party/party.conf.example
 │   │   └── replica-bootstrap/.github/workflows/
-│   │       └── pr-to-internal.yml                  ← CI workflow template for external replicas
-│   └── .gitignore-fragment                         ← patterns to add to .gitignore
+│   │       └── pr-to-internal.yml                  ← CI template for external replicas
+│   └── .gitignore-fragment
 └── .github/workflows/
     └── sync-replica.yml                            ← (--with-ci-workflow only)
 ```
 
-Both the zip and `--install-to` use the same install logic. The zip includes a
-self-contained `install.sh`; `--install-to` runs that same script internally.
+Send the zip to the upstream team. They run:
 
-**Install / upgrade behavior:**
+```bash
+unzip upstream-setup-TIMESTAMP.zip
+cd upstream-setup-TIMESTAMP
+bash install.sh --target /path/to/internal-monorepo
+```
 
-| File type | Behavior |
+`install.sh` handles both fresh installs and upgrades with the same command.
+The `--with-ci-workflow` flag is baked in at generation time — if it was set when
+the zip was created, `install.sh` will install `sync-replica.yml` automatically;
+if not, it will be skipped.
+
+### Upgrade behavior summary
+
+| File type | Behavior on upgrade |
 |---|---|
-| Scripts (`scripts/*.sh`) | Always overwritten — they are code |
-| Config templates (`*.example`, `replica-bootstrap/`) | Always overwritten |
-| `SETUP.md`, `.gitignore-fragment` | Always overwritten |
+| Scripts, config templates, SETUP.md | Always overwritten |
 | `config/sync.conf` | **Preserved** — contains local paths |
 | `config/party/*.conf` | **Preserved** — contains per-party credentials |
 | `.gitignore` | Appended only if fragment not already present |
-
-**Fresh install or upgrade via zip:**
-
-```bash
-# Generate
-./scripts/generate-upstream-setup.sh [--with-ci-workflow] --output-dir ./outbox
-
-# Install / upgrade (same command — detects existing installation)
-unzip outbox/upstream-setup-TIMESTAMP.zip -d /tmp/
-bash /tmp/upstream-setup-TIMESTAMP/install.sh --target /path/to/internal-monorepo
-```
-
-**Fresh install or upgrade via `--install-to`:**
-
-```bash
-./scripts/generate-upstream-setup.sh --install-to /path/to/internal-monorepo
-
-# After upgrade, review and commit:
-cd /path/to/internal-monorepo
-git diff replica-sync/
-git add replica-sync/ && git commit -m "chore: upgrade replica-sync tooling"
-```
 
 **Resulting directory structure in the upstream monorepo after installation:**
 
