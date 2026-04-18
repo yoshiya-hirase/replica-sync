@@ -189,30 +189,10 @@ upstream-setup-TIMESTAMP/
     └── sync-replica.yml                            ← (--with-ci-workflow only)
 ```
 
-**Fresh install via `--install-to`:**
+Both the zip and `--install-to` use the same install logic. The zip includes a
+self-contained `install.sh`; `--install-to` runs that same script internally.
 
-```bash
-./scripts/generate-upstream-setup.sh --install-to /path/to/internal-monorepo
-# Then:
-cd /path/to/internal-monorepo
-$EDITOR replica-sync/config/sync.conf
-git add replica-sync/ .gitignore && git commit -m "chore: add replica-sync tooling"
-```
-
-**Fresh install via zip:**
-
-```bash
-unzip upstream-setup-TIMESTAMP.zip -d /path/to/internal-monorepo
-cd /path/to/internal-monorepo
-cat replica-sync/.gitignore-fragment >> .gitignore
-chmod +x replica-sync/scripts/*.sh
-git add replica-sync/ .gitignore && git commit -m "chore: add replica-sync tooling"
-```
-
-**Upgrading an existing installation:**
-
-When improvements are made to this project, re-run `generate-upstream-setup.sh --install-to`
-on the same target. The script detects the existing installation and:
+**Install / upgrade behavior:**
 
 | File type | Behavior |
 |---|---|
@@ -223,13 +203,25 @@ on the same target. The script detects the existing installation and:
 | `config/party/*.conf` | **Preserved** — contains per-party credentials |
 | `.gitignore` | Appended only if fragment not already present |
 
+**Fresh install or upgrade via zip:**
+
 ```bash
-# In the replica-sync project (after making improvements):
+# Generate
+./scripts/generate-upstream-setup.sh [--with-ci-workflow] --output-dir ./outbox
+
+# Install / upgrade (same command — detects existing installation)
+unzip outbox/upstream-setup-TIMESTAMP.zip -d /tmp/
+bash /tmp/upstream-setup-TIMESTAMP/install.sh --target /path/to/internal-monorepo
+```
+
+**Fresh install or upgrade via `--install-to`:**
+
+```bash
 ./scripts/generate-upstream-setup.sh --install-to /path/to/internal-monorepo
 
-# In the monorepo:
+# After upgrade, review and commit:
 cd /path/to/internal-monorepo
-git diff replica-sync/   # review what changed
+git diff replica-sync/
 git add replica-sync/ && git commit -m "chore: upgrade replica-sync tooling"
 ```
 
