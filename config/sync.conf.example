@@ -38,6 +38,27 @@ SYNC_AUTHOR_EMAIL="sync-bot@your-company.com"
 #
 # Unlike .gitignore, these patterns are repository-root-anchored and
 # do not support negation (! prefix) or comment lines (# prefix).
+#
+# ⚠ LIMITATION — "exclude a directory except for specific files" is NOT supported.
+#
+#   These patterns are glob-based, not regular expressions.
+#   Git pathspec does not support negative lookahead or re-inclusion after exclusion.
+#   Once a path is matched by an exclusion pattern, it cannot be un-excluded.
+#
+#   DOES NOT WORK:
+#     EXCLUDE_PATHS=(".github/workflows/")
+#     INCLUDE_PATHS=(".github/workflows/sync-to-wiki-main.yml")  # ignored by git
+#
+#   CORRECT APPROACH — list each file to exclude individually:
+#     EXCLUDE_PATHS=(
+#       ".github/workflows/_deploy-docs.yml"
+#       ".github/workflows/_deploy-service.yml"
+#       ".github/workflows/dev-release.yml"
+#       ".github/workflows/sync-replica.yml"
+#       # sync-to-wiki-main.yml is NOT listed → it is included in the replica
+#     )
+#
+#   See docs/decisions.md for the full analysis of this constraint.
 EXCLUDE_PATHS=(
   "services/internal-only/"
   ".internal/"

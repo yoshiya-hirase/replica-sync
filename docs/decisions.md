@@ -112,11 +112,66 @@ In environments where network connectivity is guaranteed, migration to remote tr
 
 ---
 
+## ADR-008: EXCLUDE_PATHS uses explicit enumeration — no re-inclusion support
+
+**Status**: Accepted
+
+**Context**:
+A common need is to exclude an entire directory from the replica but include one or
+two specific files within it. For example: exclude all of `.github/workflows/` except
+`sync-to-wiki-main.yml`.
+
+**Options considered**:
+
+**Option A — Explicit enumeration (current approach):**
+List each file to exclude individually. The files not listed are included by default.
+
+```bash
+EXCLUDE_PATHS=(
+  ".github/workflows/_deploy-docs.yml"
+  ".github/workflows/dev-release.yml"
+  ".github/workflows/sync-replica.yml"
+  # sync-to-wiki-main.yml is omitted → included in the replica
+)
+```
+
+Drawback: requires updating the list whenever a new internal-only file is added.
+
+**Option B — Add `INCLUDE_PATHS` for re-inclusion:**
+Exclude the directory, then re-include specific files via a separate `INCLUDE_PATHS`
+array. The script would apply exclusions first, then copy back the included files.
+
+```bash
+EXCLUDE_PATHS=(".github/workflows/")
+INCLUDE_PATHS=(".github/workflows/sync-to-wiki-main.yml")
+```
+
+**Why Option B was rejected:**
+
+Git pathspec (`:!<pattern>`) does not support re-inclusion after exclusion.
+Once a path is matched by an exclusion pattern in `git archive` or `git diff`,
+it cannot be un-excluded by adding it as a positive pathspec in the same command.
+Implementing Option B would require post-processing outside of git (e.g. extracting
+the archive, deleting excluded files, then copying back included files from a second
+`git archive` call). This approach:
+- Is significantly more complex to implement and test reliably
+- Risks subtle inconsistencies between `git archive` and `git diff` processing
+- Provides marginal value over explicit enumeration for typical use cases
+
+Furthermore, `EXCLUDE_PATHS` patterns are glob-based, not regular expressions.
+Negative lookahead (e.g. `(?!sync-to-wiki-main).*\.yml`) is not available.
+
+**Decision**:
+Retain Option A. Users must list each file to exclude explicitly.
+This constraint is documented in `config/sync.conf.example`.
+
+---
+
 ## Open Issues
 
 | # | Issue | Priority |
 |---|------|--------|
 | 1 | Semi-automatic conflict resolution flow when `git apply --3way` fails | Medium |
 | 2 | Replica isolation strategy for multiple 3rd parties (1 replica vs multiple) | High |
-| 3 | Finer-grained control of excluded paths (file-level exclusion) | Low |
+| 3 | Finer-grained control of excluded paths — see ADR-008 for analysis | Closed (won't fix) |
 | 4 | Git version compatibility of `cherry-pick-partial.sh` `--include` pathspec | Medium |
