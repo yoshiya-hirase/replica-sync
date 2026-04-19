@@ -103,6 +103,16 @@ targeting the `publish` branch for internal review. After the PR is merged, run
   milestone/2024-Q1
 ```
 
+**Re-running during sync.conf tuning:**
+
+If the `publish` branch already exists (e.g. when iterating on `EXCLUDE_PATHS` settings),
+the script prompts rather than aborting:
+
+1. Confirms deletion of the local and remote `publish` branch
+2. If open GHE PRs targeting `publish` exist, lists them and asks whether to close them
+
+This makes it safe to run `init-replica.sh` multiple times until the generated PR looks correct.
+
 ---
 
 ## stage-publish.sh

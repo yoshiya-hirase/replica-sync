@@ -518,6 +518,30 @@ What the script does:
 6. Set publish/init-TIMESTAMP tag to START_TAG
 ```
 
+**Re-running init-replica.sh (iterative sync.conf tuning):**
+
+It is common to run `init-replica.sh` multiple times while refining `sync.conf` settings
+(e.g. adjusting `EXCLUDE_PATHS`). The script handles this with a two-step prompt:
+
+```
+[ warn] Publish branch 'publish' already exists.
+  This is normal when re-running init-replica.sh to test different sync.conf settings.
+
+  Re-initialize (delete local and remote 'publish' branch)? [y/N]: y
+
+  The following open GHE PRs target 'publish':
+    #12 initial: milestone/2024-Q1
+
+  Close these PRs automatically? [y/N]: y
+[init] Closed PR #12
+
+[init] Deleted existing 'publish' branch. Re-initializing...
+```
+
+- **First prompt** — confirms deletion of the local and remote `publish` branch
+- **Second prompt** — shown only if open PRs exist; lists them by number and title before asking
+- If you decline to close the PRs, a warning is shown that they will lose their base branch
+
 **About git hint messages:**
 
 The following hint may appear during execution:
