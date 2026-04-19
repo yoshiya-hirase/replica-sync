@@ -210,7 +210,13 @@ notification package for the 3rd party to run themselves (`patch`).
 
 Creates a zip archive containing:
 - `ONBOARDING.md` — complete collaboration guide (setup, development workflow, sync delivery, PR process)
+- `install.sh` — installs or upgrades `pr-to-internal.yml` into the 3rd party's replica clone
 - `.github/workflows/pr-to-internal.yml` — CI workflow to install in the external replica
+
+The 3rd party runs `install.sh --target /path/to/replica-clone` to install the workflow.
+The same command detects an existing installation and upgrades it. When the upstream team
+sends a new onboarding package (e.g. after a workflow update), the 3rd party runs
+`install.sh` again to upgrade.
 
 ```
 ./scripts/generate-party-onboarding.sh --party <name> [--repo <org/repo>] [--delivery-mode push|patch|both] [--output-dir <dir>]
@@ -222,6 +228,7 @@ Creates a zip archive containing:
 | `--repo <org/repo>` | No | github.com repo slug (e.g. `your-org/replica-acme`); shown as placeholder if omitted |
 | `--delivery-mode push\|patch\|both` | No | Which sync delivery section(s) to include in `ONBOARDING.md` (default: `both`) |
 | `--output-dir <dir>` | No | Output directory for the zip (default: `./party-packages`) |
+| `-h`, `--help` | No | Show usage and exit |
 
 **Examples:**
 ```bash
@@ -241,6 +248,13 @@ Creates a zip archive containing:
 ```
 
 Output: `<output-dir>/acme-onboarding-TIMESTAMP.zip`
+
+**The 3rd party installs from the zip:**
+```bash
+unzip acme-onboarding-TIMESTAMP.zip
+bash acme-onboarding-TIMESTAMP/install.sh --target /path/to/replica-acme
+# follow the printed git instructions
+```
 
 ---
 

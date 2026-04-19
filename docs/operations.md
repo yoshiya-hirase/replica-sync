@@ -78,7 +78,8 @@ $EDITOR replica-sync/config/party/acme.conf   # set REPLICA_REPO, REPLICA_GH_REP
   --party acme \
   --repo your-org/replica-acme \
   --delivery-mode push   # or patch, or both
-# → sends acme-onboarding-TIMESTAMP.zip to the 3rd party
+# → zip contains ONBOARDING.md, install.sh, and pr-to-internal.yml
+# → 3rd party runs: bash install.sh --target /path/to/replica-acme
 
 # 4. Set up branch protection on the external replica (github.com)
 #    main branch: require PRs, only Bot can bypass
@@ -563,13 +564,17 @@ Package contents:
 ```
 <party>-onboarding-TIMESTAMP/
 ├── ONBOARDING.md                          ← complete collaboration guide
+├── install.sh                             ← installs / upgrades pr-to-internal.yml
 └── .github/workflows/pr-to-internal.yml  ← CI workflow to install in replica repo
 ```
 
 Send the zip to the 3rd party with the following instructions:
 1. Extract the zip
-2. Read `ONBOARDING.md`
-3. Add `.github/workflows/pr-to-internal.yml` to their replica repo
+2. Run `bash install.sh --target /path/to/replica-clone` and follow the printed git instructions
+3. Read `ONBOARDING.md` for the full collaboration guide
+
+To upgrade the CI workflow later, generate a new package and ask the 3rd party to run
+`install.sh` again — it detects the existing installation and upgrades it automatically.
 
 ### A-4. First Delivery to 3rd Party
 
