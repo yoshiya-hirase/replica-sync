@@ -47,17 +47,35 @@ and is setting up 3rd party collaboration for the first time.
 
 ### Step 0 — Install replica-sync tooling (once)
 
+**Path A — Direct install** (when you have local access to the monorepo):
+
 ```bash
 # In the replica-sync project:
 ./scripts/generate-upstream-setup.sh --install-to /path/to/internal-monorepo
 # With GHE-side CI automation (milestone tag triggers stage-publish automatically):
 ./scripts/generate-upstream-setup.sh --install-to /path/to/internal-monorepo --with-ci-workflow
+```
 
-# In the monorepo — run the setup wizard to create sync.conf:
+**Path B — Zip package** (when the monorepo is owned by someone else):
+
+```bash
+# In the replica-sync project — generate the zip:
+./scripts/generate-upstream-setup.sh --output-dir ./outbox
+# With GHE-side CI automation:
+./scripts/generate-upstream-setup.sh --with-ci-workflow --output-dir ./outbox
+# → outbox/upstream-setup-TIMESTAMP.zip
+
+# Send the zip to the monorepo owner. They run:
+unzip upstream-setup-TIMESTAMP.zip -d /tmp/
+bash /tmp/upstream-setup-TIMESTAMP/install.sh --target /path/to/internal-monorepo
+```
+
+**After install (both paths) — create sync.conf and commit:**
+
+```bash
 cd /path/to/internal-monorepo
 ./replica-sync/scripts/setup-sync-conf.sh
 # The wizard auto-detects git settings and prompts for the rest.
-# Review the result, then commit:
 git add replica-sync/ .gitignore
 git commit -m "chore: add replica-sync tooling"
 ```
