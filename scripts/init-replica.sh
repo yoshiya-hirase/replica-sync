@@ -31,9 +31,10 @@ source "$CONFIG_FILE"
 # Defaults for optional config values (prevents -u errors when unset)
 declare -p EXCLUDE_PATHS >/dev/null 2>&1 || EXCLUDE_PATHS=()
 
-log() { echo -e "\033[1;34m[init]\033[0m $*"; }
-ok()  { echo -e "\033[1;32m[  ok ]\033[0m $*"; }
-die() { echo -e "\033[1;31m[ err ]\033[0m $*" >&2; exit 1; }
+log()  { echo -e "\033[1;34m[init]\033[0m $*"; }
+ok()   { echo -e "\033[1;32m[  ok ]\033[0m $*"; }
+warn() { echo -e "\033[1;33m[ warn]\033[0m $*" >&2; }
+die()  { echo -e "\033[1;31m[ err ]\033[0m $*" >&2; exit 1; }
 
 # ── Argument parsing ───────────────────────────────────────────
 MESSAGE=""
@@ -74,9 +75,39 @@ build_exclude_args
 git rev-parse --verify "refs/tags/${START_TAG}" >/dev/null 2>&1 \
   || die "'${START_TAG}' is not a tag. Specify a tag (e.g. milestone/v1), not a branch."
 
-git rev-parse --verify "refs/heads/${PUBLISH_BRANCH}" >/dev/null 2>&1 \
-  && die "Publish branch '${PUBLISH_BRANCH}' already exists.\n" \
-         "Use stage-publish.sh to update it."
+if git rev-parse --verify "refs/heads/${PUBLISH_BRANCH}" >/dev/null 2>&1; then
+  warn "Publish branch '${PUBLISH_BRANCH}' already exists."
+  echo "  This is normal when re-running init-replica.sh to test different sync.conf settings."
+  echo "  Re-initializing will:"
+  echo "    - Delete the local and remote '${PUBLISH_BRANCH}' branch"
+  echo "    - Close any open GHE PRs targeting '${PUBLISH_BRANCH}'"
+  echo ""
+  printf "  Type 'y' to re-initialize, anything else to abort: "
+  read -r answer
+  [[ "$answer" == "y" || "$answer" == "Y" ]] || { echo "Aborted."; exit 0; }
+  echo ""
+
+  # Close any open PRs targeting publish on GHE
+  OPEN_PRS=$(GH_HOST="$GH_HOST" gh pr list \
+    --repo "${GH_ORG}/${GH_REPO}" \
+    --base "$PUBLISH_BRANCH" \
+    --state open \
+    --json number \
+    --jq '.[].number' 2>/dev/null || true)
+  if [[ -n "$OPEN_PRS" ]]; then
+    while IFS= read -r pr_num; do
+      GH_HOST="$GH_HOST" gh pr close "$pr_num" \
+        --repo "${GH_ORG}/${GH_REPO}" \
+        --comment "Closing: publish branch is being re-initialized." 2>/dev/null || true
+      log "Closed PR #${pr_num}"
+    done <<< "$OPEN_PRS"
+  fi
+
+  # Delete remote then local publish branch
+  git push "$INTERNAL_REMOTE" --delete "$PUBLISH_BRANCH" 2>/dev/null || true
+  git branch -D "$PUBLISH_BRANCH"
+  log "Deleted existing '${PUBLISH_BRANCH}' branch. Re-initializing..."
+fi
 
 REPLICA_DIR=$(mktemp -d /tmp/replica-init-XXXXXX)
 WORK_DIR=$(mktemp -d /tmp/init-work-XXXXXX)
@@ -132,7 +163,8 @@ log "Pushing to GHE..."
 git push "$INTERNAL_REMOTE" "$PUBLISH_BRANCH"
 git push "$INTERNAL_REMOTE" "$INIT_BRANCH"
 
-EXCLUDED_LIST="${EXCLUDE_PATHS[*]:-(none)}"
+EXCLUDED_LIST="${EXCLUDE_PATHS[*]+"${EXCLUDE_PATHS[*]}"}"
+EXCLUDED_LIST="${EXCLUDED_LIST:-(none)}"
 
 PR_BODY="## initial: ${START_TAG}
 
