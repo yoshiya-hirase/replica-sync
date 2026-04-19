@@ -122,7 +122,30 @@ if git rev-parse --verify "refs/heads/${PUBLISH_BRANCH}" >/dev/null 2>&1; then
   # Delete remote then local publish branch
   git push "$INTERNAL_REMOTE" --delete "$PUBLISH_BRANCH" 2>/dev/null || true
   git branch -D "$PUBLISH_BRANCH"
-  log "Deleted existing '${PUBLISH_BRANCH}' branch. Re-initializing..."
+  log "Deleted '${PUBLISH_BRANCH}' branch"
+
+  # Delete publish/init-* tags left by previous init runs (local + remote)
+  STALE_INIT_TAGS=$(git tag -l "publish/init-*")
+  if [[ -n "$STALE_INIT_TAGS" ]]; then
+    while IFS= read -r tag; do
+      git tag -d "$tag"
+      git push "$INTERNAL_REMOTE" --delete "refs/tags/${tag}" 2>/dev/null || true
+      log "Deleted tag: ${tag}"
+    done <<< "$STALE_INIT_TAGS"
+  fi
+
+  # Delete init/* branches left by previous init runs (remote only; they are
+  # worktree branches that no longer exist locally after cleanup)
+  STALE_INIT_BRANCHES=$(git ls-remote --heads "$INTERNAL_REMOTE" "init/*" \
+    | awk '{print $2}' | sed 's|refs/heads/||' 2>/dev/null || true)
+  if [[ -n "$STALE_INIT_BRANCHES" ]]; then
+    while IFS= read -r branch; do
+      git push "$INTERNAL_REMOTE" --delete "$branch" 2>/dev/null || true
+      log "Deleted remote branch: ${branch}"
+    done <<< "$STALE_INIT_BRANCHES"
+  fi
+
+  log "Re-initializing..."
 fi
 
 REPLICA_DIR=$(mktemp -d /tmp/replica-init-XXXXXX)
