@@ -85,7 +85,7 @@ log "Commit message: $COMMIT_MSG"
 # ── Helpers ────────────────────────────────────────────────────
 build_exclude_args() {
   EXCLUDE_ARGS=()
-  for path in "${EXCLUDE_PATHS[@]}"; do
+  for path in ${EXCLUDE_PATHS[@]+"${EXCLUDE_PATHS[@]}"}; do
     EXCLUDE_ARGS+=(":!${path}")
   done
 }
@@ -290,7 +290,7 @@ if [[ "$OUTPUT_MODE" == "patch" ]]; then
   "pr_title":      "${COMMIT_MSG}",
   "pr_body":       $(echo "$PR_BODY" | jq -Rs .),
   "default_mode":  "${MODE}",
-  "exclude_paths": $(printf '%s\n' "${EXCLUDE_PATHS[@]}" | jq -R . | jq -s .)
+  "exclude_paths": $(printf '%s\n' ${EXCLUDE_PATHS[@]+"${EXCLUDE_PATHS[@]}"} | jq -R . | jq -s .)
 }
 EOF
 

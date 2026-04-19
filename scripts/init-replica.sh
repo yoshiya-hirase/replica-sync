@@ -52,7 +52,7 @@ done
 # ── Helpers ────────────────────────────────────────────────────
 build_exclude_args() {
   EXCLUDE_ARGS=()
-  for path in "${EXCLUDE_PATHS[@]}"; do
+  for path in ${EXCLUDE_PATHS[@]+"${EXCLUDE_PATHS[@]}"}; do
     EXCLUDE_ARGS+=(":!${path}")
   done
 }
