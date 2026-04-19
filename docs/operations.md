@@ -258,7 +258,9 @@ agreed delivery method.
 
 ```bash
 # Extract and apply in one step
+# (run from any branch — the script switches to main automatically)
 unzip sync-TIMESTAMP-acme.zip
+cd sync-TIMESTAMP-acme/
 bash sync-TIMESTAMP-apply.sh          # creates a PR on this repo by default
 # → review and merge the resulting PR
 
@@ -891,10 +893,12 @@ sync-patches/
     └── sync-20240401-120000-apply.sh    # standalone apply script for 3rd party to run
 ```
 
-The 3rd party extracts and applies the zip in one step:
+The 3rd party extracts and applies the zip:
 
 ```bash
-unzip sync-20240401-120000-acme.zip && bash sync-20240401-120000-apply.sh
+unzip sync-20240401-120000-acme.zip
+cd sync-20240401-120000-acme/
+bash sync-20240401-120000-apply.sh   # any branch is fine — the script switches to main automatically
 ```
 
 With `--output patch`, the last-sync tag is automatically updated at patch generation time.
