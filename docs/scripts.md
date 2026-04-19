@@ -263,7 +263,12 @@ Run after `init-replica.sh` or after a `stage-publish.sh` PR has been merged.
 | `--output push` | | Push directly to the external replica via git |
 | `--mode pr` | `pr` | Create a PR on the external replica (push output only) |
 | `--mode direct` | | Push directly to `main` without a PR (push output only) |
+| `--resend` | | Re-generate patch without advancing sync tags (patch output only) |
 | `<commit-message>` | `sync: YYYY-MM-DD` | Commit message for the sync commit |
+
+`--resend` is for patch mode only. When the current publish HEAD has already been delivered
+(no diff), it looks back to the previous sync tag and regenerates the patch from there.
+Sync tags are not updated, so the delivery state is unchanged.
 
 **Examples:**
 ```bash
@@ -272,6 +277,9 @@ Run after `init-replica.sh` or after a `stage-publish.sh` PR has been merged.
 
 # Generate patch set, recipient applies directly to main
 ./scripts/deliver-to-replica.sh --party acme --mode direct "sync: 2024-Q2"
+
+# Re-generate patch without advancing sync tags (e.g. to resend lost files)
+./scripts/deliver-to-replica.sh --party acme --resend "sync: 2024-Q2"
 
 # Push as a PR to the replica
 ./scripts/deliver-to-replica.sh --party acme --output push "sync: 2024-Q2"

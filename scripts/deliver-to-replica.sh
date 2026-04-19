@@ -15,6 +15,9 @@
 #   # Output patch set (3rd party applies directly to main)
 #   ./scripts/deliver-to-replica.sh --party acme --mode direct "sync: 2024-Q1"
 #
+#   # Re-generate patch without advancing sync tags (e.g. to resend lost files)
+#   ./scripts/deliver-to-replica.sh --party acme --resend "sync: 2024-Q1"
+#
 #   # Push as a PR to the replica
 #   ./scripts/deliver-to-replica.sh --party acme --output push "sync: 2024-Q1"
 #
@@ -45,12 +48,14 @@ OUTPUT_MODE="patch"  # push | patch
 MODE="pr"            # pr | direct
 PARTY=""
 COMMIT_MSG=""
+RESEND="false"       # true = regenerate patch without advancing sync tags
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --output) OUTPUT_MODE="$2"; shift 2 ;;
     --mode)   MODE="$2";        shift 2 ;;
     --party)  PARTY="$2";       shift 2 ;;
+    --resend) RESEND="true";    shift ;;
     --*)      die "Unknown option: $1" ;;
     *)        COMMIT_MSG="$1"; shift ;;
   esac
@@ -290,8 +295,11 @@ else
 fi
 
 if [[ "$PUBLISH_HEAD" == "$LAST_SYNC_SHA" ]]; then
-  ok "Already delivered. No undelivered changes on publish branch."
-  exit 0
+  if [[ "$RESEND" != "true" ]]; then
+    ok "Already delivered. No undelivered changes on publish branch."
+    exit 0
+  fi
+  log "--resend: already delivered; will look back to previous sync base"
 fi
 
 log "Delivery range: ${LAST_SYNC_SHA:0:8}..${PUBLISH_HEAD:0:8}"
@@ -305,8 +313,40 @@ trap 'rm -f "$PATCH_FILE"' EXIT
 git diff "${LAST_SYNC_SHA}..${PUBLISH_HEAD}" > "$PATCH_FILE"
 
 if [[ ! -s "$PATCH_FILE" ]]; then
-  ok "No diff. Skipping."
-  exit 0
+  if [[ "$RESEND" != "true" ]]; then
+    ok "No diff. Skipping."
+    exit 0
+  fi
+
+  # --resend: diff is empty (last-sync == publish HEAD).
+  # Walk sync tags to find the commit just before the current last-sync,
+  # then regenerate the patch from that point to PUBLISH_HEAD.
+  log "--resend: no diff from current base; finding previous sync base..."
+  CURRENT_SYNC_COMMIT=$(git rev-parse "${PARTY_SYNC_TAG}^{}" 2>/dev/null || echo "")
+  PREV_BASE_SHA=""
+  while IFS= read -r stag; do
+    sha=$(git rev-parse "${stag}^{}" 2>/dev/null) || continue
+    [[ "$sha" == "$CURRENT_SYNC_COMMIT" ]] && continue
+    PREV_BASE_SHA="$sha"  # last value in sorted order before current
+  done < <(git tag -l "replica/${PARTY}/sync-*" | sort)
+
+  if [[ -n "$PREV_BASE_SHA" ]]; then
+    log "--resend: regenerating from ${PREV_BASE_SHA:0:8}..${PUBLISH_HEAD:0:8}"
+    LAST_SYNC_SHA="$PREV_BASE_SHA"
+  else
+    # Only one prior delivery — regenerate from publish root
+    LAST_SYNC_SHA=$(git rev-list --max-parents=0 "${INTERNAL_REMOTE}/${PUBLISH_BRANCH}")
+    log "--resend: only one prior sync; regenerating from publish root (${LAST_SYNC_SHA:0:8}..${PUBLISH_HEAD:0:8})"
+  fi
+
+  git diff "${LAST_SYNC_SHA}..${PUBLISH_HEAD}" > "$PATCH_FILE"
+
+  if [[ ! -s "$PATCH_FILE" ]]; then
+    ok "--resend: still no diff after base lookup. Nothing to regenerate."
+    exit 0
+  fi
+
+  FIRST_DELIVERY=false  # resend is never treated as a first delivery
 fi
 
 log "Patch size: $(wc -l < "$PATCH_FILE") lines"
@@ -364,33 +404,39 @@ EOF
   # ── Advance sync tags (patch mode) ───────────────────────────
   # Tags are advanced at patch generation time. The patch set is the
   # deliverable; whether the 3rd party has applied it is out of scope.
-  SYNC_TIMESTAMP=$(date +%Y%m%d-%H%M%S)
-  TAG_MESSAGE="party: ${PARTY}
+  # Skipped when --resend is specified (tags already reflect this delivery).
+  if [[ "$RESEND" != "true" ]]; then
+    SYNC_TIMESTAMP=$(date +%Y%m%d-%H%M%S)
+    TAG_MESSAGE="party: ${PARTY}
 output: ${OUTPUT_MODE}
 mode: ${MODE}
 commit_msg: ${COMMIT_MSG}
 publish_head: ${PUBLISH_HEAD}
 timestamp: ${SYNC_TIMESTAMP}"
 
-  cd "$INTERNAL_REPO"
+    cd "$INTERNAL_REPO"
 
-  if [[ "$FIRST_DELIVERY" == "true" ]]; then
-    PARTY_INIT_TAG="replica/${PARTY}/init-${SYNC_TIMESTAMP}"
+    if [[ "$FIRST_DELIVERY" == "true" ]]; then
+      PARTY_INIT_TAG="replica/${PARTY}/init-${SYNC_TIMESTAMP}"
+      GIT_COMMITTER_NAME="$SYNC_AUTHOR_NAME" \
+      GIT_COMMITTER_EMAIL="$SYNC_AUTHOR_EMAIL" \
+      git tag -a "$PARTY_INIT_TAG" "$PUBLISH_HEAD" -m "$TAG_MESSAGE"
+      ok "Init tag: $PARTY_INIT_TAG -> ${PUBLISH_HEAD:0:8}"
+    fi
+
     GIT_COMMITTER_NAME="$SYNC_AUTHOR_NAME" \
     GIT_COMMITTER_EMAIL="$SYNC_AUTHOR_EMAIL" \
-    git tag -a "$PARTY_INIT_TAG" "$PUBLISH_HEAD" -m "$TAG_MESSAGE"
-    ok "Init tag: $PARTY_INIT_TAG -> ${PUBLISH_HEAD:0:8}"
+    git tag -a -f "$PARTY_SYNC_TAG" "$PUBLISH_HEAD" -m "$TAG_MESSAGE"
+
+    GIT_COMMITTER_NAME="$SYNC_AUTHOR_NAME" \
+    GIT_COMMITTER_EMAIL="$SYNC_AUTHOR_EMAIL" \
+    git tag -a "replica/${PARTY}/sync-${SYNC_TIMESTAMP}" "$PUBLISH_HEAD" -m "$TAG_MESSAGE"
+
+    ok "Sync tag advanced: $PARTY_SYNC_TAG -> ${PUBLISH_HEAD:0:8}"
+  else
+    log "--resend: sync tags not updated"
   fi
 
-  GIT_COMMITTER_NAME="$SYNC_AUTHOR_NAME" \
-  GIT_COMMITTER_EMAIL="$SYNC_AUTHOR_EMAIL" \
-  git tag -a -f "$PARTY_SYNC_TAG" "$PUBLISH_HEAD" -m "$TAG_MESSAGE"
-
-  GIT_COMMITTER_NAME="$SYNC_AUTHOR_NAME" \
-  GIT_COMMITTER_EMAIL="$SYNC_AUTHOR_EMAIL" \
-  git tag -a "replica/${PARTY}/sync-${SYNC_TIMESTAMP}" "$PUBLISH_HEAD" -m "$TAG_MESSAGE"
-
-  ok "Sync tag advanced: $PARTY_SYNC_TAG -> ${PUBLISH_HEAD:0:8}"
   ok "Delivery complete"
   exit 0
 fi
