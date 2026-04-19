@@ -77,6 +77,81 @@ If `sync.conf` already exists, the wizard prompts for confirmation before overwr
 
 ---
 
+## build-exclude-list.sh
+
+**Generates an `EXCLUDE_PATHS` list by scanning tracked files**
+
+Solves the "exclude a directory but keep specific files" problem that git pathspec
+cannot express directly. The script scans `git ls-files` output, applies `--exclude`
+glob patterns to build a candidate list, then removes any files matched by `--include`
+from that list. The result is a ready-to-paste `EXCLUDE_PATHS=(...)` block.
+
+```
+./replica-sync/scripts/build-exclude-list.sh --exclude <pattern> [--include <pattern>] [--apply | --dry-run]
+```
+
+| Option | Required | Description |
+|---|:---:|---|
+| `--exclude <pattern>` | Yes (repeatable) | Glob pattern for files to exclude |
+| `--include <pattern>` | No (repeatable) | Glob pattern to exempt from exclusion |
+| `--apply` | No | Write result directly into `sync.conf` (replaces existing `EXCLUDE_PATHS` block) |
+| `--dry-run` | No | Preview the updated `sync.conf` without modifying it |
+| `-h`, `--help` | No | Show usage and exit |
+
+Patterns use shell fnmatch-style globs:
+- `**` matches across directory boundaries
+- Trailing `/` on a directory pattern is stripped automatically
+
+Run from the **monorepo root** (uses `git ls-files` of the current repo).
+
+**Examples:**
+```bash
+# Print EXCLUDE_PATHS block — paste into sync.conf manually
+./replica-sync/scripts/build-exclude-list.sh \
+  --exclude ".github/workflows/**" \
+  --include ".github/workflows/sync-to-wiki-main.yml"
+
+# Multiple exclude patterns
+./replica-sync/scripts/build-exclude-list.sh \
+  --exclude ".github/workflows/**" \
+  --exclude "services/internal-*/**" \
+  --include ".github/workflows/sync-to-wiki-main.yml"
+
+# Apply directly to sync.conf
+./replica-sync/scripts/build-exclude-list.sh \
+  --exclude ".github/workflows/**" \
+  --include ".github/workflows/sync-to-wiki-main.yml" \
+  --apply
+
+# Preview the sync.conf change without writing it
+./replica-sync/scripts/build-exclude-list.sh \
+  --exclude ".github/workflows/**" \
+  --include ".github/workflows/sync-to-wiki-main.yml" \
+  --dry-run
+```
+
+**Typical workflow:**
+```bash
+# 1. Preview what would be excluded
+./replica-sync/scripts/build-exclude-list.sh \
+  --exclude ".github/workflows/**" \
+  --include ".github/workflows/sync-to-wiki-main.yml"
+
+# 2. If the list looks correct, apply to sync.conf
+./replica-sync/scripts/build-exclude-list.sh \
+  --exclude ".github/workflows/**" \
+  --include ".github/workflows/sync-to-wiki-main.yml" \
+  --apply
+
+# 3. Re-run whenever new files are added to the repo
+```
+
+> **Note:** The generated list reflects the files tracked at the time of running.
+> Re-run this script whenever new files are added to ensure newly added internal
+> files are not accidentally included in the next sync.
+
+---
+
 ## init-replica.sh
 
 **Operation [A] — Initialize publish branch (run once per project)**

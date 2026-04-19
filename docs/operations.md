@@ -202,6 +202,7 @@ git checkout main && git cherry-pick external/acme-pr-N
 | `generate-party-onboarding.sh` | Internal | Generate onboarding package (zip) for a 3rd party |
 | `generate-upstream-setup.sh` | Standalone | Generate setup package (zip) to install replica-sync into an upstream monorepo |
 | `setup-sync-conf.sh` | Internal | Interactive wizard to create `sync.conf` from git auto-detection |
+| `build-exclude-list.sh` | Internal | Generate `EXCLUDE_PATHS` list from exclude/include glob patterns |
 
 ---
 
@@ -850,6 +851,26 @@ EXCLUDE_PATHS=(
 > **Tip:** When using globs in a directory where new files may be added later, prefer
 > explicit listing over globs. A newly added internal workflow file would be
 > accidentally included in the next sync if the glob does not cover it.
+
+#### Generating EXCLUDE_PATHS with build-exclude-list.sh
+
+When you want to exclude many files matching a pattern but keep specific ones,
+use `build-exclude-list.sh` to generate the list automatically instead of
+writing each entry by hand:
+
+```bash
+# Exclude all workflow files except sync-to-wiki-main.yml
+./replica-sync/scripts/build-exclude-list.sh \
+  --exclude ".github/workflows/**" \
+  --include ".github/workflows/sync-to-wiki-main.yml" \
+  --apply   # writes directly into sync.conf
+```
+
+The script scans `git ls-files`, applies the exclude/include patterns, and
+outputs a ready-to-use `EXCLUDE_PATHS=(...)` block. Re-run it whenever new
+files are added to the repo to keep the list up to date.
+
+See [build-exclude-list.sh](scripts.md#build-exclude-listsh) for full option reference.
 
 #### Limits on the Number of EXCLUDE_PATHS Entries
 

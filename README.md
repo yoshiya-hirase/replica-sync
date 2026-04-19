@@ -53,6 +53,7 @@ See [docs/operations.md](docs/operations.md) for the full workflow.
 | `scripts/generate-party-onboarding.sh` | Generate onboarding package for a 3rd party |
 | `scripts/generate-upstream-setup.sh` | Generate or install replica-sync tooling into upstream monorepo |
 | `scripts/setup-sync-conf.sh` | Interactive wizard to create `sync.conf` |
+| `scripts/build-exclude-list.sh` | Generate `EXCLUDE_PATHS` list from exclude/include patterns |
 
 See [docs/scripts.md](docs/scripts.md) for full option reference.
 

@@ -98,6 +98,7 @@ SCRIPTS=(
   notify-external-pr.sh
   generate-party-onboarding.sh
   setup-sync-conf.sh
+  build-exclude-list.sh
 )
 for s in "${SCRIPTS[@]}"; do
   src="${REPO_ROOT}/scripts/${s}"
@@ -205,6 +206,7 @@ replica-sync/
 ├── SETUP.md                                    ← this file
 ├── scripts/                                    ← sync scripts (run from monorepo root)
 │   ├── setup-sync-conf.sh                      ← interactive wizard to create sync.conf
+│   ├── build-exclude-list.sh                   ← generate EXCLUDE_PATHS list from patterns
 │   ├── init-replica.sh                         ← [A] initialize publish branch
 │   ├── stage-publish.sh                        ← [B-1] squash and create GHE PR
 │   ├── deliver-to-replica.sh                   ← [B-2] deliver to external replica

@@ -17,6 +17,7 @@
     "ONBOARDING",
     "euo",
     "pipefail",
-    "toplevel"
+    "toplevel",
+    "fnmatch"
   ]
 }
