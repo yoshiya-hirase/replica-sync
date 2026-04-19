@@ -89,7 +89,7 @@ cleanup() {
 }
 trap cleanup EXIT
 
-git diff "${PUBLISH_HEAD}..HEAD" -- . "${EXCLUDE_ARGS[@]}" > "$PATCH_FILE"
+git diff "${PUBLISH_HEAD}..HEAD" -- . ${EXCLUDE_ARGS[@]+"${EXCLUDE_ARGS[@]}"} > "$PATCH_FILE"
 
 if [[ ! -s "$PATCH_FILE" ]]; then
   ok "No diff after applying exclude paths. Skipping."
@@ -116,7 +116,7 @@ else
   SUMMARY=$(
     cd "$INTERNAL_REPO"
     git log --oneline --no-merges "${PUBLISH_HEAD}..${INTERNAL_HEAD}" \
-      -- . "${EXCLUDE_ARGS[@]}" | head -50
+      -- . ${EXCLUDE_ARGS[@]+"${EXCLUDE_ARGS[@]}"} | head -50
   )
 
   GIT_AUTHOR_NAME="$SYNC_AUTHOR_NAME" \
@@ -136,7 +136,7 @@ git push "$INTERNAL_REMOTE" "$SYNC_BRANCH"
 # ── Step 6: Open PR on GHE (sync/TIMESTAMP -> publish) ───────
 SUMMARY_FOR_PR=$(
   git log --oneline --no-merges "${PUBLISH_HEAD}..${INTERNAL_HEAD}" \
-    -- . "${EXCLUDE_ARGS[@]}" | head -50
+    -- . ${EXCLUDE_ARGS[@]+"${EXCLUDE_ARGS[@]}"} | head -50
 )
 
 PR_BODY="## ${COMMIT_MSG}

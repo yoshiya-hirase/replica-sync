@@ -93,7 +93,7 @@ build_exclude_args() {
 generate_sync_summary() {
   cd "$INTERNAL_REPO"
   git log --oneline --no-merges "${PARTY_SYNC_TAG}..${INTERNAL_HEAD}" \
-    -- . "${EXCLUDE_ARGS[@]}" \
+    -- . ${EXCLUDE_ARGS[@]+"${EXCLUDE_ARGS[@]}"} \
     | head -50
 }
 
@@ -257,7 +257,7 @@ TIMESTAMP=$(date +%Y%m%d-%H%M%S)
 PATCH_FILE=$(mktemp /tmp/replica-sync-XXXXXX.patch)
 trap 'rm -f "$PATCH_FILE"' EXIT
 
-git diff "${PARTY_SYNC_TAG}..HEAD" -- . "${EXCLUDE_ARGS[@]}" > "$PATCH_FILE"
+git diff "${PARTY_SYNC_TAG}..HEAD" -- . ${EXCLUDE_ARGS[@]+"${EXCLUDE_ARGS[@]}"} > "$PATCH_FILE"
 
 if [[ ! -s "$PATCH_FILE" ]]; then
   ok "No diff after applying exclude paths. Skipping."

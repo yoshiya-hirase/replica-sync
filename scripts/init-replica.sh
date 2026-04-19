@@ -91,7 +91,7 @@ log "Init branch: $INIT_BRANCH"
 
 # ── Step 1: Extract file tree (EXCLUDE_PATHS applied) ────────
 log "Extracting snapshot via git archive..."
-git archive "$START_TAG" -- . "${EXCLUDE_ARGS[@]}" | tar -x -C "$REPLICA_DIR"
+git archive "$START_TAG" -- . ${EXCLUDE_ARGS[@]+"${EXCLUDE_ARGS[@]}"} | tar -x -C "$REPLICA_DIR"
 
 # ── Step 2: Create publish branch with empty base commit ─────
 log "Creating publish branch with empty base commit..."
