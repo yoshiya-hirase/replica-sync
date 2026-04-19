@@ -185,7 +185,7 @@ cd sync-${ts}-*/
 **Step 2 — Run the apply script** from your local clone of the replica:
 
 \`\`\`bash
-# Default mode (${default_mode}): run from the root of the replica
+# Run from the root of the replica (any branch is fine — the script switches to main automatically)
 cd /path/to/replica
 bash /path/to/sync-${ts}-apply.sh
 \`\`\`
@@ -245,6 +245,8 @@ generate_apply_sh() {
 #
 # Prerequisites:
 #   - Run from the root of the replica repository
+#   - The script switches to main automatically before branching; no need to
+#     switch branches manually beforehand
 #   - jq must be installed; gh CLI is required only for pr mode
 #
 set -euo pipefail
@@ -302,6 +304,8 @@ apply_patch() {
 }
 
 if [[ "$MODE" == "pr" ]]; then
+  log "Switching to $REPLICA_BRANCH before branching..."
+  git checkout "$REPLICA_BRANCH"
   log "Creating branch: $SYNC_BRANCH"
   git checkout -b "$SYNC_BRANCH"
 
