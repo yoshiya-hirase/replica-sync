@@ -215,16 +215,21 @@ if ! echo "$CONF_CONTENT" | grep -q "^EXCLUDE_PATHS=("; then
   die "EXCLUDE_PATHS block not found in sync.conf.\n  Cannot apply automatically. Paste the output manually."
 fi
 
-# Build new sync.conf by replacing the EXCLUDE_PATHS block
-# Use awk: print lines normally until EXCLUDE_PATHS=(, then skip until closing ),
-# then insert the new block.
-NEW_CONF=$(awk -v new_block="$NEW_BLOCK" '
-  /^# .*build-exclude-list/ { next }        # remove old generator comments
-  /^# exclude:/ { next }                    # remove old exclude comments
-  /^# include:/ { next }                    # remove old include comments
+# Build new sync.conf by replacing the EXCLUDE_PATHS block.
+# NEW_BLOCK contains newlines so it cannot be passed via awk -v.
+# Write it to a temp file and read it inside awk with getline instead.
+BLOCK_FILE=$(mktemp /tmp/exclude-block-XXXXXX)
+printf '%s\n' "$NEW_BLOCK" > "$BLOCK_FILE"
+trap 'rm -f "$BLOCK_FILE"' EXIT
+
+NEW_CONF=$(awk -v block_file="$BLOCK_FILE" '
+  /^# .*build-exclude-list/ { next }
+  /^# exclude:/ { next }
+  /^# include:/ { next }
   /^EXCLUDE_PATHS=\(/ {
     in_block=1
-    print new_block
+    while ((getline line < block_file) > 0) { print line }
+    close(block_file)
     next
   }
   in_block {
