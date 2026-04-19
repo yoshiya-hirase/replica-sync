@@ -63,7 +63,7 @@ if [[ -f "$CONF_FILE" ]]; then
   warn "sync.conf already exists: $CONF_FILE"
   printf "  Overwrite? [y/N]: "
   read -r answer
-  [[ "${answer,,}" == "y" ]] || { echo "Aborted."; exit 0; }
+  [[ "$answer" == "y" || "$answer" == "Y" ]] || { echo "Aborted."; exit 0; }
   echo ""
 fi
 
@@ -82,7 +82,7 @@ INTERNAL_REPO="$REPO_ROOT"
 info "INTERNAL_REPO = $INTERNAL_REPO"
 
 # INTERNAL_REMOTE — pick from available remotes
-mapfile -t REMOTES < <(git -C "$REPO_ROOT" remote)
+IFS=$'\n' read -r -d '' -a REMOTES < <(git -C "$REPO_ROOT" remote && printf '\0')
 if [[ ${#REMOTES[@]} -eq 0 ]]; then
   warn "No git remotes found. You will need to set INTERNAL_REMOTE manually."
   INTERNAL_REMOTE="origin"
