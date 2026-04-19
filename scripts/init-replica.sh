@@ -78,29 +78,45 @@ git rev-parse --verify "refs/tags/${START_TAG}" >/dev/null 2>&1 \
 if git rev-parse --verify "refs/heads/${PUBLISH_BRANCH}" >/dev/null 2>&1; then
   warn "Publish branch '${PUBLISH_BRANCH}' already exists."
   echo "  This is normal when re-running init-replica.sh to test different sync.conf settings."
-  echo "  Re-initializing will:"
-  echo "    - Delete the local and remote '${PUBLISH_BRANCH}' branch"
-  echo "    - Close any open GHE PRs targeting '${PUBLISH_BRANCH}'"
   echo ""
-  printf "  Type 'y' to re-initialize, anything else to abort: "
+  printf "  Re-initialize (delete local and remote '${PUBLISH_BRANCH}' branch)? [y/N]: "
   read -r answer
   [[ "$answer" == "y" || "$answer" == "Y" ]] || { echo "Aborted."; exit 0; }
   echo ""
 
-  # Close any open PRs targeting publish on GHE
+  # Check for open PRs targeting publish on GHE
   OPEN_PRS=$(GH_HOST="$GH_HOST" gh pr list \
     --repo "${GH_ORG}/${GH_REPO}" \
     --base "$PUBLISH_BRANCH" \
     --state open \
-    --json number \
-    --jq '.[].number' 2>/dev/null || true)
+    --json number,title \
+    --jq '.[] | "#\(.number) \(.title)"' 2>/dev/null || true)
+
   if [[ -n "$OPEN_PRS" ]]; then
-    while IFS= read -r pr_num; do
-      GH_HOST="$GH_HOST" gh pr close "$pr_num" \
-        --repo "${GH_ORG}/${GH_REPO}" \
-        --comment "Closing: publish branch is being re-initialized." 2>/dev/null || true
-      log "Closed PR #${pr_num}"
+    echo "  The following open GHE PRs target '${PUBLISH_BRANCH}':"
+    while IFS= read -r pr_line; do
+      echo "    $pr_line"
     done <<< "$OPEN_PRS"
+    echo ""
+    printf "  Close these PRs automatically? [y/N]: "
+    read -r close_answer
+    if [[ "$close_answer" == "y" || "$close_answer" == "Y" ]]; then
+      PR_NUMBERS=$(GH_HOST="$GH_HOST" gh pr list \
+        --repo "${GH_ORG}/${GH_REPO}" \
+        --base "$PUBLISH_BRANCH" \
+        --state open \
+        --json number \
+        --jq '.[].number' 2>/dev/null || true)
+      while IFS= read -r pr_num; do
+        GH_HOST="$GH_HOST" gh pr close "$pr_num" \
+          --repo "${GH_ORG}/${GH_REPO}" \
+          --comment "Closing: publish branch is being re-initialized." 2>/dev/null || true
+        log "Closed PR #${pr_num}"
+      done <<< "$PR_NUMBERS"
+    else
+      warn "Skipping PR close. The open PRs will remain but their base branch will be gone."
+    fi
+    echo ""
   fi
 
   # Delete remote then local publish branch
