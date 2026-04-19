@@ -775,6 +775,58 @@ These are **not** `.gitignore` patterns.
 - Negation (`!` prefix) is not supported
 - Comment lines (`#` prefix) are not supported — use shell comments outside the array
 
+#### Examples
+
+**Exclude entire directories:**
+```bash
+EXCLUDE_PATHS=(
+  "services/internal-only/"   # all files under this directory
+  ".internal/"                # top-level hidden directory
+)
+```
+
+**Exclude specific files:**
+```bash
+EXCLUDE_PATHS=(
+  "docs/INTERNAL_DESIGN.md"
+  "config/secrets.yml"
+)
+```
+
+**Selectively expose one file from a directory — list everything else explicitly:**
+
+Because negation (`!`) is not supported, you cannot say "exclude this directory except
+for one file." Instead, list each file to exclude individually:
+
+```bash
+# Scenario: .github/workflows/ contains several files, but only
+# sync-to-wiki-main.yml should be included in the replica.
+EXCLUDE_PATHS=(
+  ".github/workflows/_deploy-docs.yml"
+  ".github/workflows/_deploy-service.yml"
+  ".github/workflows/dev-release.yml"
+  ".github/workflows/sync-replica.yml"
+  ".github/workflows/sync-to-wiki.yml"
+  # sync-to-wiki-main.yml is NOT listed → it is included in the replica
+)
+```
+
+You can use globs to reduce repetition, but be careful — globs do not automatically
+cover files added in the future:
+
+```bash
+EXCLUDE_PATHS=(
+  ".github/workflows/_*.yml"           # matches _deploy-docs.yml, _deploy-service.yml
+  ".github/workflows/dev-*.yml"        # matches dev-release.yml
+  ".github/workflows/sync-replica.yml"
+  ".github/workflows/sync-to-wiki.yml" # explicit — avoids matching sync-to-wiki-main.yml
+)
+```
+
+> **Tip:** When using globs in a directory where new files may be added later, prefer
+> explicit listing over globs. A newly added internal workflow file would be
+> accidentally included in the next sync if the glob does not cover it.
+
 #### Removing a Path from EXCLUDE_PATHS (exposing previously excluded files)
 
 If a path was excluded in a previous sync (or during `init-replica.sh`) and you want
