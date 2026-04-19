@@ -90,14 +90,13 @@ git commit -m "chore: add replica-sync tooling"
 ```bash
 # 1. Create the external replica repo on github.com (empty)
 
-# 2. Create per-party config
+# 2. Create per-party config (required for all parties, regardless of delivery mode)
 cp replica-sync/config/party/party.conf.example replica-sync/config/party/acme.conf
 $EDITOR replica-sync/config/party/acme.conf   # set REPLICA_REPO, REPLICA_GH_REPO, etc.
 
 # 3. Generate and send onboarding package
 ./replica-sync/scripts/generate-party-onboarding.sh \
   --party acme \
-  --repo your-org/replica-acme \
   --delivery-mode push   # or patch, or both
 # → zip contains ONBOARDING.md, install.sh, and pr-to-internal.yml
 # → 3rd party runs: bash install.sh --target /path/to/replica-acme
@@ -105,6 +104,15 @@ $EDITOR replica-sync/config/party/acme.conf   # set REPLICA_REPO, REPLICA_GH_REP
 # 4. Set up branch protection on the external replica (github.com)
 #    main branch: require PRs, only Bot can bypass
 ```
+
+> **Note — `<party>.conf` is required even in patch mode.**
+> `deliver-to-replica.sh` and `generate-party-onboarding.sh` both require
+> `config/party/<party>.conf` to exist, regardless of delivery mode.
+> The file serves as the **registry of active 3rd parties** — its presence is how you
+> track which parties are receiving replica content.
+> If you are using patch mode and do not yet have a local clone of the replica,
+> the push-specific variables (`REPLICA_REPO`, `REPLICA_REMOTE`, `REPLICA_BRANCH`)
+> can be left at their placeholder values; only `REPLICA_GH_REPO` needs to be set.
 
 → See [A-1] for publish branch setup and branch protection details.
 
@@ -232,7 +240,8 @@ cp config/party/party.conf.example config/party/acme.conf
 $EDITOR config/party/acme.conf
 ```
 
-`deliver-to-replica.sh` automatically `source`s `config/party/acme.conf` when `--party acme` is passed.
+`deliver-to-replica.sh` and `generate-party-onboarding.sh` automatically `source` `config/party/acme.conf`
+when `--party acme` is passed. Both scripts error clearly if the file does not exist.
 
 `sync.conf` and `config/party/*.conf` are `.gitignore`d and are not committed to the repository.
 
@@ -291,10 +300,10 @@ See [B-4. Managing Excluded Paths](#b-4-managing-excluded-paths) for pattern rul
 
 | Variable | Description | `[A] init` | `[B-1] stage` | `[B-2] deliver` | `[C] external` | Example |
 |---|---|:---:|:---:|:---:|:---:|---|
-| `REPLICA_REPO` | Local path to replica (absolute) | ― | ― | push only | ― | `/path/to/replica-acme` |
-| `REPLICA_REMOTE` | Replica remote name | ― | ― | push only | ― | `origin` |
-| `REPLICA_BRANCH` | Replica sync target branch | ― | ― | push only | ― | `main` |
-| `REPLICA_GH_REPO` | github.com `org/repo` | ― | ― | push + pr mode only | notify only | `your-org/replica-acme` |
+| `REPLICA_REPO` | Absolute local path to the replica git clone on your machine — used by `deliver-to-replica.sh` (push mode) to run `git push` directly | ― | ― | push only | ― | `/path/to/replica-acme` |
+| `REPLICA_REMOTE` | Git remote name inside `REPLICA_REPO` that points to github.com | ― | ― | push only | ― | `origin` |
+| `REPLICA_BRANCH` | Branch on the replica that receives synced content | ― | ― | push only | ― | `main` |
+| `REPLICA_GH_REPO` | github.com `org/repo` slug — used by `deliver-to-replica.sh` (PR mode) for `gh pr create --repo` and by `generate-party-onboarding.sh` as the default repo slug when `--repo` is not specified | ― | ― | pr mode only | notify only | `your-org/replica-acme` |
 
 ---
 

@@ -11,15 +11,14 @@
 #   .github/workflows/pr-to-internal.yml    — CI workflow (must be in their repo)
 #
 # Usage:
-#   # Minimal — party name only
+#   # Minimal — party name only (REPLICA_GH_REPO from config/party/acme.conf is used)
 #   ./scripts/generate-party-onboarding.sh --party acme
 #
-#   # With known replica repo slug
+#   # Override repo slug on command line (takes priority over conf)
 #   ./scripts/generate-party-onboarding.sh --party acme --repo your-org/replica-acme
 #
 #   # Specify delivery mode explicitly
-#   ./scripts/generate-party-onboarding.sh --party acme --repo your-org/replica-acme \
-#     --delivery-mode push
+#   ./scripts/generate-party-onboarding.sh --party acme --delivery-mode push
 #
 #   # Custom output directory
 #   ./scripts/generate-party-onboarding.sh --party acme --output-dir ./outbox
@@ -76,6 +75,20 @@ case "$DELIVERY_MODE" in
   push|patch|both) ;;
   *) die "--delivery-mode must be push, patch, or both" ;;
 esac
+
+# ── Load per-party config ──────────────────────────────────────
+PARTY_CONFIG="${SCRIPT_DIR}/../config/party/${PARTY}.conf"
+[[ -f "$PARTY_CONFIG" ]] \
+  || die "Party config not found: $PARTY_CONFIG\n  Run: cp config/party/party.conf.example config/party/${PARTY}.conf and edit it"
+# shellcheck source=../config/party/party.conf.example
+source "$PARTY_CONFIG"
+
+# --repo argument takes priority over REPLICA_GH_REPO from conf
+if [[ -n "$REPLICA_REPO_SLUG" ]]; then
+  : # --repo was specified on command line; keep it
+else
+  REPLICA_REPO_SLUG="${REPLICA_GH_REPO:-""}"
+fi
 
 # ── Derived values ─────────────────────────────────────────────
 TIMESTAMP=$(date +%Y%m%d-%H%M%S)
