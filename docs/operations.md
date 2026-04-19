@@ -775,6 +775,24 @@ These are **not** `.gitignore` patterns.
 - Negation (`!` prefix) is not supported
 - Comment lines (`#` prefix) are not supported — use shell comments outside the array
 
+#### Removing a Path from EXCLUDE_PATHS (exposing previously excluded files)
+
+If a path was excluded in a previous sync (or during `init-replica.sh`) and you want
+to include it in future deliveries, simply remove it from `EXCLUDE_PATHS` in `sync.conf`.
+
+**What happens on the next `stage-publish.sh` run:**
+
+The `publish` branch has never contained the previously excluded files.
+`stage-publish.sh` diffs `publish HEAD..internal/main HEAD` with the updated
+(smaller) exclusion list — so the previously excluded files appear in the diff
+**as new additions**, and are included in the patch delivered to the replica.
+
+> **Note for 3rd parties:** From the replica's perspective, these files appear
+> for the first time in that sync — as if they were newly created. There is no
+> indication that they existed in the internal repo before. If the sudden addition
+> of a large set of files might surprise the 3rd party, notify them in advance
+> that the next sync will include previously withheld content.
+
 ### B-5. Delivery Method Selection Guide
 
 | | `push --mode pr` | `push --mode direct` | `patch --mode pr` | `patch --mode direct` |
