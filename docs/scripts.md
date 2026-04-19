@@ -208,8 +208,11 @@ targeting the `publish` branch for internal review. After the PR is merged, run
 If the `publish` branch already exists (e.g. when iterating on `EXCLUDE_PATHS` settings),
 the script prompts rather than aborting:
 
-1. Confirms deletion of the local and remote `publish` branch
-2. If open GHE PRs targeting `publish` exist, lists them and asks whether to close them
+1. Lists all objects to be deleted and asks for confirmation:
+   - local and remote `publish` branch
+   - all `publish/init-*` tags (local and remote)
+   - all remote `init/*` branches
+2. If open GHE PRs targeting `publish` exist, lists them by number and title and asks whether to close them
 
 This makes it safe to run `init-replica.sh` multiple times until the generated PR looks correct.
 

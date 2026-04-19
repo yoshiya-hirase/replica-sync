@@ -527,8 +527,12 @@ It is common to run `init-replica.sh` multiple times while refining `sync.conf` 
 ```
 [ warn] Publish branch 'publish' already exists.
   This is normal when re-running init-replica.sh to test different sync.conf settings.
+  Re-initializing will delete:
+    - local and remote 'publish' branch
+    - all 'publish/init-*' tags (local and remote)
+    - all remote 'init/*' branches
 
-  Re-initialize (delete local and remote 'publish' branch)? [y/N]: y
+  Re-initialize? [y/N]: y
 
   The following open GHE PRs target 'publish':
     #12 initial: milestone/2024-Q1
@@ -536,10 +540,16 @@ It is common to run `init-replica.sh` multiple times while refining `sync.conf` 
   Close these PRs automatically? [y/N]: y
 [init] Closed PR #12
 
-[init] Deleted existing 'publish' branch. Re-initializing...
+[init] Deleted 'publish' branch
+[init] Deleted tag: publish/init-20260419-114237
+[init] Deleted remote branch: init/20260419-114237
+[init] Re-initializing...
 ```
 
-- **First prompt** — confirms deletion of the local and remote `publish` branch
+- **First prompt** — lists all objects to be deleted and confirms
+  - local and remote `publish` branch
+  - all `publish/init-*` tags (local and remote)
+  - all remote `init/*` branches
 - **Second prompt** — shown only if open PRs exist; lists them by number and title before asking
 - If you decline to close the PRs, a warning is shown that they will lose their base branch
 
