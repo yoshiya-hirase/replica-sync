@@ -195,6 +195,107 @@ git checkout main && git cherry-pick external/acme-pr-N
 
 ---
 
+## Quick Start (3rd Party Collaborator)
+
+This section covers the complete lifecycle from the perspective of a 3rd party
+that has received a replica and wants to contribute changes back upstream.
+
+### Step 0 — Initial setup (once)
+
+You will receive an onboarding package zip from the upstream team.
+
+```bash
+# 1. Clone the replica repository
+git clone https://github.com/your-org/replica-acme.git
+cd replica-acme
+
+# 2. Install the CI workflow from the onboarding package
+unzip acme-onboarding-TIMESTAMP.zip
+bash acme-onboarding-TIMESTAMP/install.sh --target /path/to/replica-acme
+# → prints git add / commit / push commands; follow them to activate the workflow
+
+# 3. Verify the workflow is active
+#    Open a test PR on github.com and confirm the pr-to-internal workflow runs
+```
+
+Read `ONBOARDING.md` (included in the package) for a full guide to the collaboration process.
+
+---
+
+### Step 1 — Develop and submit a PR (repeat as needed)
+
+```bash
+# 1. Always start from the latest main
+git checkout main
+git pull
+
+# 2. Create a feature branch
+git checkout -b acme/your-feature-name
+
+# 3. Make changes, commit, and push
+git add .
+git commit -m "feat: description of your change"
+git push origin acme/your-feature-name
+
+# 4. Open a PR targeting main
+gh pr create --base main --title "Your change title"
+# → pr-to-internal.yml runs automatically and forwards the diff to the upstream team
+# → A comment is posted on your PR confirming forwarding; keep the PR open
+```
+
+**What happens next:** The upstream team reviews the diff internally and posts a comment
+on your PR with one of: `accepted`, `partially accepted`, or `rejected`.
+Your changes will arrive in `main` via the next milestone sync — not by merging your PR directly.
+
+---
+
+### Step 2 — Receive an upstream sync (repeat each milestone)
+
+The upstream team delivers changes periodically. How you receive them depends on the
+agreed delivery method.
+
+**Patch mode** (you receive a zip file):
+
+```bash
+# Extract and apply in one step
+unzip sync-TIMESTAMP-acme.zip
+bash sync-TIMESTAMP-apply.sh          # creates a PR on this repo by default
+# → review and merge the resulting PR
+
+# Or apply directly to main (if agreed with upstream)
+bash sync-TIMESTAMP-apply.sh --mode direct
+```
+
+**Push mode** (upstream opens a PR directly on this repo):
+
+```bash
+# A PR titled "sync: YYYY-QN" will appear on the repository
+# Review and merge it — this updates main with the latest upstream content
+```
+
+**After merging the sync PR**, rebase your development branches:
+
+```bash
+git checkout acme/your-feature-name
+git rebase main
+```
+
+---
+
+### Step 3 — Upgrade the CI workflow (when upstream sends a new package)
+
+```bash
+unzip acme-onboarding-TIMESTAMP.zip
+bash acme-onboarding-TIMESTAMP/install.sh --target /path/to/replica-acme
+# → detects the existing workflow and upgrades it
+# → prints git add / commit / push commands; follow them to activate
+```
+
+→ See [A-1] for branch protection requirements on the replica.
+→ See [C] for how the upstream team processes your PRs.
+
+---
+
 ## Scripts Reference
 
 | Script | Environment | Purpose |
