@@ -136,6 +136,87 @@ $(generate_deliver_summary)
 EOF
 }
 
+# Generate README.md — human-readable guide included in the patch zip
+generate_readme() {
+  local output_file="$1"
+  local ts="$TIMESTAMP"
+  local msg="$COMMIT_MSG"
+  local default_mode="$MODE"
+  local first="$FIRST_DELIVERY"
+  local last_short="${LAST_SYNC_SHA:0:8}"
+  local head_short="${PUBLISH_HEAD:0:8}"
+
+  cat > "$output_file" << README
+# Sync Package — ${msg}
+
+This package contains an upstream sync from the internal repository.
+Apply it to your local clone of the replica repository.
+
+## Package contents
+
+| File | Description |
+|---|---|
+| \`sync-${ts}.patch\` | Git diff patch (upstream changes) |
+| \`sync-${ts}-meta.json\` | Metadata (commit range, PR title, delivery info) |
+| \`sync-${ts}-summary.txt\` | List of upstream commits included in this sync |
+| \`sync-${ts}-apply.sh\` | Apply script — run this to apply the patch |
+$([ "$first" = "true" ] && echo "| \`sync-${ts}-bootstrap/\` | Bootstrap files added on first delivery |")
+
+## Delivery info
+
+| Field | Value |
+|---|---|
+| Sync message | \`${msg}\` |
+| Delivered at | $(date '+%Y-%m-%d %H:%M:%S') |
+| Commit range | \`${last_short}\`..\`${head_short}\` |
+| Default apply mode | \`${default_mode}\` |
+
+## How to apply
+
+**Prerequisites:** \`git\`, \`jq\`, and \`gh\` (gh CLI required only for PR mode).
+
+**Step 1 — Extract this package** (if not already done):
+
+\`\`\`bash
+unzip sync-${ts}-*.zip
+cd sync-${ts}-*/
+\`\`\`
+
+**Step 2 — Run the apply script** from your local clone of the replica:
+
+\`\`\`bash
+# Default mode (${default_mode}): run from the root of the replica
+cd /path/to/replica
+bash /path/to/sync-${ts}-apply.sh
+\`\`\`
+
+Or specify the mode explicitly:
+
+\`\`\`bash
+bash sync-${ts}-apply.sh --mode pr      # push sync branch and open a PR (recommended)
+bash sync-${ts}-apply.sh --mode direct  # apply directly to main
+\`\`\`
+
+**Step 3 — Review and merge** (PR mode only):
+
+After running the script, a PR titled \`${msg}\` will be opened on the repository.
+Review the changes and merge it to update \`main\`.
+
+**Step 4 — Rebase your development branches:**
+
+\`\`\`bash
+git checkout your-feature-branch
+git rebase main
+\`\`\`
+
+## Change summary
+
+\`\`\`
+$(generate_deliver_summary)
+\`\`\`
+README
+}
+
 # Generate apply.sh — a standalone script for the 3rd party to apply the patch
 generate_apply_sh() {
   local output_file="$1"
@@ -365,6 +446,7 @@ if [[ "$OUTPUT_MODE" == "patch" ]]; then
   DEST_META="${WORK_PATCH_DIR}/sync-${TIMESTAMP}-meta.json"
   DEST_SUMMARY="${WORK_PATCH_DIR}/sync-${TIMESTAMP}-summary.txt"
   DEST_APPLY="${WORK_PATCH_DIR}/sync-${TIMESTAMP}-apply.sh"
+  DEST_README="${WORK_PATCH_DIR}/README.md"
   DEST_BOOTSTRAP="${WORK_PATCH_DIR}/sync-${TIMESTAMP}-bootstrap"
 
   cp "$PATCH_FILE" "$DEST_PATCH"
@@ -388,6 +470,7 @@ EOF
 
   generate_deliver_summary > "$DEST_SUMMARY"
   generate_apply_sh "$DEST_APPLY"
+  generate_readme "$DEST_README"
 
   if [[ "$FIRST_DELIVERY" == "true" ]] && \
      { [[ -d "$BOOTSTRAP_COMMON_DIR" ]] || [[ -d "$BOOTSTRAP_PARTY_DIR" ]]; }; then
@@ -400,6 +483,7 @@ EOF
   (cd "$WORK_PATCH_DIR" && zip -r "$PATCH_SET_ZIP" . -x "*.DS_Store" >/dev/null)
 
   ok "Patch set created: ${PATCH_SET_ZIP}"
+  echo "  README    : README.md"
   echo "  patch     : sync-${TIMESTAMP}.patch"
   echo "  meta      : sync-${TIMESTAMP}-meta.json"
   echo "  summary   : sync-${TIMESTAMP}-summary.txt"
