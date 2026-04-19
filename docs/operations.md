@@ -851,6 +851,25 @@ EXCLUDE_PATHS=(
 > explicit listing over globs. A newly added internal workflow file would be
 > accidentally included in the next sync if the glob does not cover it.
 
+#### Limits on the Number of EXCLUDE_PATHS Entries
+
+Git itself has no limit on the number of pathspec entries. The practical limit comes
+from the OS argument buffer (ARG_MAX), since all entries are passed as individual
+command-line arguments to `git archive` and `git diff`:
+
+| OS | ARG_MAX |
+|---|---|
+| macOS | ~1 MB |
+| Linux | ~2 MB |
+
+Each entry expands to a string like `:!.github/workflows/_deploy-docs.yml` (tens of
+bytes). You would need **well over 1,000 entries** before approaching the limit.
+
+For typical projects — even those with hundreds of individually listed files — this
+is not a concern. If the number of entries ever grows to that scale, the appropriate
+response is to restructure the exclusions (e.g. exclude a broader directory) rather
+than work around ARG_MAX.
+
 #### Removing a Path from EXCLUDE_PATHS (exposing previously excluded files)
 
 If a path was excluded in a previous sync (or during `init-replica.sh`) and you want
