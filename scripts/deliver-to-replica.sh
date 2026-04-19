@@ -353,14 +353,19 @@ log "Patch size: $(wc -l < "$PATCH_FILE") lines"
 
 # ── patch mode: write files and exit ──────────────────────────
 if [[ "$OUTPUT_MODE" == "patch" ]]; then
-  PATCH_SET_DIR="${PATCH_OUTPUT_DIR}/sync-${TIMESTAMP}-${PARTY}"
-  mkdir -p "$PATCH_SET_DIR"
+  PATCH_SET_NAME="sync-${TIMESTAMP}-${PARTY}"
+  PATCH_SET_DIR="${PATCH_OUTPUT_DIR}/${PATCH_SET_NAME}"
+  PATCH_SET_ZIP="${PATCH_OUTPUT_DIR}/${PATCH_SET_NAME}.zip"
+  mkdir -p "$PATCH_OUTPUT_DIR"
+  WORK_PATCH_DIR=$(mktemp -d /tmp/patch-set-XXXXXX)
+  cleanup_patch() { rm -rf "$WORK_PATCH_DIR"; rm -f "$PATCH_FILE"; }
+  trap cleanup_patch EXIT
 
-  DEST_PATCH="${PATCH_SET_DIR}/sync-${TIMESTAMP}.patch"
-  DEST_META="${PATCH_SET_DIR}/sync-${TIMESTAMP}-meta.json"
-  DEST_SUMMARY="${PATCH_SET_DIR}/sync-${TIMESTAMP}-summary.txt"
-  DEST_APPLY="${PATCH_SET_DIR}/sync-${TIMESTAMP}-apply.sh"
-  DEST_BOOTSTRAP="${PATCH_SET_DIR}/sync-${TIMESTAMP}-bootstrap"
+  DEST_PATCH="${WORK_PATCH_DIR}/sync-${TIMESTAMP}.patch"
+  DEST_META="${WORK_PATCH_DIR}/sync-${TIMESTAMP}-meta.json"
+  DEST_SUMMARY="${WORK_PATCH_DIR}/sync-${TIMESTAMP}-summary.txt"
+  DEST_APPLY="${WORK_PATCH_DIR}/sync-${TIMESTAMP}-apply.sh"
+  DEST_BOOTSTRAP="${WORK_PATCH_DIR}/sync-${TIMESTAMP}-bootstrap"
 
   cp "$PATCH_FILE" "$DEST_PATCH"
 
@@ -391,15 +396,21 @@ EOF
     ok "Bootstrap: files collected -> $DEST_BOOTSTRAP"
   fi
 
-  ok "Patch set generated: $PATCH_SET_DIR"
+  # ── Create zip archive ──────────────────────────────────────
+  (cd "$WORK_PATCH_DIR" && zip -r "$PATCH_SET_ZIP" . -x "*.DS_Store" >/dev/null)
+
+  ok "Patch set created: ${PATCH_SET_ZIP}"
   echo "  patch     : sync-${TIMESTAMP}.patch"
   echo "  meta      : sync-${TIMESTAMP}-meta.json"
   echo "  summary   : sync-${TIMESTAMP}-summary.txt"
   echo "  apply     : sync-${TIMESTAMP}-apply.sh"
   [[ -d "$DEST_BOOTSTRAP" ]] && echo "  bootstrap : sync-${TIMESTAMP}-bootstrap/"
   echo ""
-  echo "Send the entire directory to the 3rd party:"
-  echo "  $PATCH_SET_DIR"
+  echo "Send this zip to the 3rd party:"
+  echo "  ${PATCH_SET_ZIP}"
+  echo ""
+  echo "They can apply it by extracting and running:"
+  echo "  unzip $(basename "$PATCH_SET_ZIP") && bash sync-${TIMESTAMP}-apply.sh"
 
   # ── Advance sync tags (patch mode) ───────────────────────────
   # Tags are advanced at patch generation time. The patch set is the
