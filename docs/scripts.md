@@ -259,25 +259,25 @@ Run after `init-replica.sh` or after a `stage-publish.sh` PR has been merged.
 | Option | Default | Description |
 |---|---|---|
 | `--party <name>` | — | Party name (loads `config/party/<name>.conf`) |
-| `--output push` | `push` | Push directly to the external replica via git |
-| `--output patch` | | Generate a patch set for manual delivery |
+| `--output patch` | `patch` | Generate a patch set for manual delivery |
+| `--output push` | | Push directly to the external replica via git |
 | `--mode pr` | `pr` | Create a PR on the external replica (push output only) |
-| `--mode direct` | | Push directly to `main` without a PR |
+| `--mode direct` | | Push directly to `main` without a PR (push output only) |
 | `<commit-message>` | `sync: YYYY-MM-DD` | Commit message for the sync commit |
 
 **Examples:**
 ```bash
-# Push as a PR (default)
+# Generate patch set for manual delivery (default; 3rd party opens a PR)
 ./scripts/deliver-to-replica.sh --party acme "sync: 2024-Q2"
 
-# Push directly to main
+# Generate patch set, recipient applies directly to main
 ./scripts/deliver-to-replica.sh --party acme --mode direct "sync: 2024-Q2"
 
-# Generate patch set for manual delivery
-./scripts/deliver-to-replica.sh --party acme --output patch "sync: 2024-Q2"
+# Push as a PR to the replica
+./scripts/deliver-to-replica.sh --party acme --output push "sync: 2024-Q2"
 
-# Generate patch set, recipient applies directly to main
-./scripts/deliver-to-replica.sh --party acme --output patch --mode direct "sync: 2024-Q2"
+# Push directly to main on the replica
+./scripts/deliver-to-replica.sh --party acme --output push --mode direct "sync: 2024-Q2"
 ```
 
 ---

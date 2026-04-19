@@ -9,17 +9,17 @@
 # publish branch and also sets the replica/<party>/init-TIMESTAMP tag.
 #
 # Usage:
-#   # Push as a PR (default)
+#   # Output patch set (default; 3rd party opens a PR)
 #   ./scripts/deliver-to-replica.sh --party acme "sync: 2024-Q1"
 #
-#   # Push directly to main
+#   # Output patch set (3rd party applies directly to main)
 #   ./scripts/deliver-to-replica.sh --party acme --mode direct "sync: 2024-Q1"
 #
-#   # Output patch set (3rd party opens a PR — default)
-#   ./scripts/deliver-to-replica.sh --party acme --output patch "sync: 2024-Q1"
+#   # Push as a PR to the replica
+#   ./scripts/deliver-to-replica.sh --party acme --output push "sync: 2024-Q1"
 #
-#   # Output patch set (3rd party applies directly to main)
-#   ./scripts/deliver-to-replica.sh --party acme --output patch --mode direct "sync: 2024-Q1"
+#   # Push directly to main on the replica
+#   ./scripts/deliver-to-replica.sh --party acme --output push --mode direct "sync: 2024-Q1"
 #
 set -euo pipefail
 
@@ -41,7 +41,7 @@ ok()  { echo -e "\033[1;32m[  ok   ]\033[0m $*"; }
 die() { echo -e "\033[1;31m[ err   ]\033[0m $*" >&2; exit 1; }
 
 # ── Argument parsing ───────────────────────────────────────────
-OUTPUT_MODE="push"   # push | patch
+OUTPUT_MODE="patch"  # push | patch
 MODE="pr"            # pr | direct
 PARTY=""
 COMMIT_MSG=""
