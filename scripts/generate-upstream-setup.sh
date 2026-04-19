@@ -97,6 +97,7 @@ SCRIPTS=(
   cherry-pick-partial.sh
   notify-external-pr.sh
   generate-party-onboarding.sh
+  setup-sync-conf.sh
 )
 for s in "${SCRIPTS[@]}"; do
   src="${REPO_ROOT}/scripts/${s}"
@@ -203,6 +204,7 @@ an external replica on github.com and collaborate with 3rd parties.
 replica-sync/
 ├── SETUP.md                                    ← this file
 ├── scripts/                                    ← sync scripts (run from monorepo root)
+│   ├── setup-sync-conf.sh                      ← interactive wizard to create sync.conf
 │   ├── init-replica.sh                         ← [A] initialize publish branch
 │   ├── stage-publish.sh                        ← [B-1] squash and create GHE PR
 │   ├── deliver-to-replica.sh                   ← [B-2] deliver to external replica
@@ -268,6 +270,17 @@ git add replica-sync/ && git commit -m "chore: upgrade replica-sync tooling"
 ## Configuration
 
 ### Shared config (\`replica-sync/config/sync.conf\`)
+
+Use the interactive setup wizard to create \`sync.conf\` automatically:
+
+\`\`\`bash
+./replica-sync/scripts/setup-sync-conf.sh
+\`\`\`
+
+The wizard auto-detects \`INTERNAL_REPO\`, \`INTERNAL_REMOTE\`, \`GH_HOST\`, \`GH_ORG\`,
+and \`GH_REPO\` from the current git repository, and prompts for the remaining values.
+
+Alternatively, copy and edit the example manually:
 
 \`\`\`bash
 cp replica-sync/config/sync.conf.example replica-sync/config/sync.conf

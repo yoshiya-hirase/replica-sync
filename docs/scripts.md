@@ -5,6 +5,78 @@ where applicable) automatically. Run them from the **repository root** unless no
 
 ---
 
+## setup-sync-conf.sh
+
+**Interactive wizard to create `sync.conf`**
+
+Auto-detects `INTERNAL_REPO`, `INTERNAL_REMOTE`, `GH_HOST`, `GH_ORG`, and `GH_REPO`
+from the current git repository (remote URL parsing), then prompts for `SYNC_AUTHOR_NAME`,
+`SYNC_AUTHOR_EMAIL`, `EXCLUDE_PATHS`, and `PATCH_OUTPUT_DIR`. Writes the result to
+`replica-sync/config/sync.conf`.
+
+Run this instead of manually copying `sync.conf.example` — it saves time and reduces
+the risk of misconfiguration.
+
+```
+./replica-sync/scripts/setup-sync-conf.sh
+```
+
+No options. Run from the **monorepo root** (not the replica-sync directory).
+
+If `sync.conf` already exists, the wizard prompts for confirmation before overwriting.
+
+**Auto-detected values:**
+
+| Variable | Source |
+|---|---|
+| `INTERNAL_REPO` | Absolute path of the current directory (`git rev-parse --show-toplevel`) |
+| `INTERNAL_REMOTE` | From `git remote`; prompted if multiple remotes exist |
+| `GH_HOST` | Parsed from the remote URL (SSH or HTTPS) |
+| `GH_ORG` | Parsed from the remote URL |
+| `GH_REPO` | Parsed from the remote URL |
+
+**Prompted values (with defaults):**
+
+| Variable | Default |
+|---|---|
+| `SYNC_AUTHOR_NAME` | `Platform Sync Bot` |
+| `SYNC_AUTHOR_EMAIL` | `sync-bot@<GH_HOST>` |
+| `PATCH_OUTPUT_DIR` | `./sync-patches` |
+| `EXCLUDE_PATHS` | Empty (enter paths one per line; blank line to finish) |
+
+**Example session:**
+```
+── Step 1: Auto-detecting repository settings ──
+[ info] INTERNAL_REPO   = /path/to/internal-monorepo
+[ info] INTERNAL_REMOTE = origin
+[ info] GH_HOST         = github.your-company.com
+[ info] GH_ORG          = your-org
+[ info] GH_REPO         = internal-monorepo
+
+── Step 2: Confirm repository settings (press Enter to accept) ──
+  INTERNAL_REPO   [/path/to/internal-monorepo]:
+  INTERNAL_REMOTE [origin]:
+  GH_HOST         [github.your-company.com]:
+  GH_ORG          [your-org]:
+  GH_REPO         [internal-monorepo]:
+
+── Step 3: Sync commit author ──
+  SYNC_AUTHOR_NAME  [Platform Sync Bot]:
+  SYNC_AUTHOR_EMAIL [sync-bot@github.your-company.com]:
+
+── Step 4: Excluded paths ──
+  Path (or Enter to finish): services/internal-only/
+  Path (or Enter to finish): .internal/
+  Path (or Enter to finish):
+
+── Step 5: Patch mode output directory ──
+  PATCH_OUTPUT_DIR [./sync-patches]:
+
+[  ok ] Written: replica-sync/config/sync.conf
+```
+
+---
+
 ## init-replica.sh
 
 **Operation [A] — Initialize publish branch (run once per project)**

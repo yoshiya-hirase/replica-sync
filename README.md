@@ -12,19 +12,23 @@ Scripts for safely syncing an internal GitHub Enterprise monorepo to a replica o
 ## Quick Start
 
 ```bash
-# 1. Prepare the config file
-cp config/sync.conf.example config/sync.conf
-$EDITOR config/sync.conf
+# 1. Install tooling into your monorepo
+./scripts/generate-upstream-setup.sh --install-to /path/to/internal-monorepo
 
-# 2. Make scripts executable
-chmod +x scripts/*.sh
+# 2. Create config (interactive wizard)
+cd /path/to/internal-monorepo
+./replica-sync/scripts/setup-sync-conf.sh
 
-# 3. Initialize replica (once only)
-./scripts/init-replica.sh
+# 3. Initialize publish branch (once)
+./replica-sync/scripts/init-replica.sh milestone/2024-Q1
 
 # 4. Milestone sync
-./scripts/sync-to-replica.sh "sync: 2024-Q1"
+./replica-sync/scripts/stage-publish.sh "sync: 2024-Q1"
+# → review & merge the GHE PR, then:
+./replica-sync/scripts/deliver-to-replica.sh --party acme "sync: 2024-Q1"
 ```
+
+See [docs/operations.md](docs/operations.md) for the full workflow.
 
 ## Documentation
 
@@ -48,6 +52,7 @@ chmod +x scripts/*.sh
 | `scripts/notify-external-pr.sh` | [C] Post review decision to external PR |
 | `scripts/generate-party-onboarding.sh` | Generate onboarding package for a 3rd party |
 | `scripts/generate-upstream-setup.sh` | Generate or install replica-sync tooling into upstream monorepo |
+| `scripts/setup-sync-conf.sh` | Interactive wizard to create `sync.conf` |
 
 See [docs/scripts.md](docs/scripts.md) for full option reference.
 

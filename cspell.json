@@ -16,6 +16,7 @@
     "TIMESTAMP",
     "ONBOARDING",
     "euo",
-    "pipefail"
+    "pipefail",
+    "toplevel"
   ]
 }

@@ -53,14 +53,17 @@ and is setting up 3rd party collaboration for the first time.
 # With GHE-side CI automation (milestone tag triggers stage-publish automatically):
 ./scripts/generate-upstream-setup.sh --install-to /path/to/internal-monorepo --with-ci-workflow
 
-# In the monorepo:
+# In the monorepo — run the setup wizard to create sync.conf:
 cd /path/to/internal-monorepo
-$EDITOR replica-sync/config/sync.conf       # set INTERNAL_REPO, GH_HOST, EXCLUDE_PATHS, etc.
+./replica-sync/scripts/setup-sync-conf.sh
+# The wizard auto-detects git settings and prompts for the rest.
+# Review the result, then commit:
 git add replica-sync/ .gitignore
 git commit -m "chore: add replica-sync tooling"
 ```
 
 → See [Pre-A] for detailed install and config options.
+→ See [setup-sync-conf.sh](scripts.md#setup-sync-confsh) for wizard details.
 
 ---
 
@@ -180,6 +183,7 @@ git checkout main && git cherry-pick external/acme-pr-N
 | `notify-external-pr.sh` | Internal | Notify external PR of acceptance decision |
 | `generate-party-onboarding.sh` | Internal | Generate onboarding package (zip) for a 3rd party |
 | `generate-upstream-setup.sh` | Standalone | Generate setup package (zip) to install replica-sync into an upstream monorepo |
+| `setup-sync-conf.sh` | Internal | Interactive wizard to create `sync.conf` from git auto-detection |
 
 ---
 
@@ -188,9 +192,13 @@ git checkout main && git cherry-pick external/acme-pr-N
 ### `config/sync.conf` (shared config)
 
 All scripts operate by `source`-ing `config/sync.conf`.
-Copy `config/sync.conf.example` and edit it for your environment.
+Use the setup wizard to create it interactively, or copy the example manually:
 
 ```bash
+# Recommended: interactive wizard (auto-detects git settings)
+./replica-sync/scripts/setup-sync-conf.sh
+
+# Alternative: manual copy and edit
 cp config/sync.conf.example config/sync.conf
 $EDITOR config/sync.conf
 ```
@@ -389,6 +397,7 @@ internal-monorepo/                     ← monorepo root
 │   ├── SETUP.md
 │   ├── .gitignore-fragment
 │   ├── scripts/
+│   │   ├── setup-sync-conf.sh
 │   │   ├── init-replica.sh
 │   │   ├── stage-publish.sh
 │   │   ├── deliver-to-replica.sh
