@@ -281,7 +281,7 @@ Column-to-script mapping:
 | `SYNC_AUTHOR_NAME` | Author name for commits and tags | **Required** | **Required** | push only | apply/cherry-pick only | Bot name to avoid exposing internal developer names externally |
 | `SYNC_AUTHOR_EMAIL` | Author email for commits and tags | **Required** | **Required** | push only | apply/cherry-pick only | Same as above |
 | `EXCLUDE_PATHS` | Array of paths to exclude from replica sync | **Required** | **Required** | ― | ― | Not needed for deliver since `init` / `stage-publish` already applied exclusions |
-| `PATCH_OUTPUT_DIR` | Output directory when `--output patch` | ― | ― | patch only | ― | Defaults to `./sync-patches` if unset |
+| `PATCH_OUTPUT_DIR` | Root output directory for patch mode; each delivery creates a `sync-TIMESTAMP-PARTY/` subdirectory inside | ― | ― | patch only | ― | Defaults to `./sync-patches` if unset |
 
 Example `EXCLUDE_PATHS` config:
 
@@ -448,7 +448,7 @@ internal-monorepo/                     ← monorepo root
 
 Output directories created at runtime (gitignored, not committed):
 ```
-replica-sync/sync-patches/             ← patch mode delivery output
+replica-sync/sync-patches/             ← patch mode delivery output (one subdirectory per delivery: sync-TIMESTAMP-PARTY/)
 replica-sync/party-packages/           ← onboarding packages for 3rd parties
 ```
 

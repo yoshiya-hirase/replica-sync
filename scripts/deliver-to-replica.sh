@@ -313,13 +313,14 @@ log "Patch size: $(wc -l < "$PATCH_FILE") lines"
 
 # ── patch mode: write files and exit ──────────────────────────
 if [[ "$OUTPUT_MODE" == "patch" ]]; then
-  mkdir -p "$PATCH_OUTPUT_DIR"
+  PATCH_SET_DIR="${PATCH_OUTPUT_DIR}/sync-${TIMESTAMP}-${PARTY}"
+  mkdir -p "$PATCH_SET_DIR"
 
-  DEST_PATCH="${PATCH_OUTPUT_DIR}/sync-${TIMESTAMP}.patch"
-  DEST_META="${PATCH_OUTPUT_DIR}/sync-${TIMESTAMP}-meta.json"
-  DEST_SUMMARY="${PATCH_OUTPUT_DIR}/sync-${TIMESTAMP}-summary.txt"
-  DEST_APPLY="${PATCH_OUTPUT_DIR}/sync-${TIMESTAMP}-apply.sh"
-  DEST_BOOTSTRAP="${PATCH_OUTPUT_DIR}/sync-${TIMESTAMP}-bootstrap"
+  DEST_PATCH="${PATCH_SET_DIR}/sync-${TIMESTAMP}.patch"
+  DEST_META="${PATCH_SET_DIR}/sync-${TIMESTAMP}-meta.json"
+  DEST_SUMMARY="${PATCH_SET_DIR}/sync-${TIMESTAMP}-summary.txt"
+  DEST_APPLY="${PATCH_SET_DIR}/sync-${TIMESTAMP}-apply.sh"
+  DEST_BOOTSTRAP="${PATCH_SET_DIR}/sync-${TIMESTAMP}-bootstrap"
 
   cp "$PATCH_FILE" "$DEST_PATCH"
 
@@ -350,18 +351,15 @@ EOF
     ok "Bootstrap: files collected -> $DEST_BOOTSTRAP"
   fi
 
-  ok "Patch set generated:"
-  echo "  patch     : $DEST_PATCH"
-  echo "  meta      : $DEST_META"
-  echo "  summary   : $DEST_SUMMARY"
-  echo "  apply     : $DEST_APPLY"
-  [[ -d "$DEST_BOOTSTRAP" ]] && echo "  bootstrap : $DEST_BOOTSTRAP"
+  ok "Patch set generated: $PATCH_SET_DIR"
+  echo "  patch     : sync-${TIMESTAMP}.patch"
+  echo "  meta      : sync-${TIMESTAMP}-meta.json"
+  echo "  summary   : sync-${TIMESTAMP}-summary.txt"
+  echo "  apply     : sync-${TIMESTAMP}-apply.sh"
+  [[ -d "$DEST_BOOTSTRAP" ]] && echo "  bootstrap : sync-${TIMESTAMP}-bootstrap/"
   echo ""
-  echo "Send the following files to the 3rd party:"
-  echo "  $DEST_PATCH"
-  echo "  $DEST_META"
-  echo "  $DEST_APPLY"
-  [[ -d "$DEST_BOOTSTRAP" ]] && echo "  $DEST_BOOTSTRAP  (bootstrap directory)"
+  echo "Send the entire directory to the 3rd party:"
+  echo "  $PATCH_SET_DIR"
 
   # ── Advance sync tags (patch mode) ───────────────────────────
   # Tags are advanced at patch generation time. The patch set is the
