@@ -78,8 +78,12 @@ git rev-parse --verify "refs/tags/${START_TAG}" >/dev/null 2>&1 \
 if git rev-parse --verify "refs/heads/${PUBLISH_BRANCH}" >/dev/null 2>&1; then
   warn "Publish branch '${PUBLISH_BRANCH}' already exists."
   echo "  This is normal when re-running init-replica.sh to test different sync.conf settings."
+  echo "  Re-initializing will delete:"
+  echo "    - local and remote '${PUBLISH_BRANCH}' branch"
+  echo "    - all 'publish/init-*' tags (local and remote)"
+  echo "    - all remote 'init/*' branches"
   echo ""
-  printf "  Re-initialize (delete local and remote '${PUBLISH_BRANCH}' branch)? [y/N]: "
+  printf "  Re-initialize? [y/N]: "
   read -r answer
   [[ "$answer" == "y" || "$answer" == "Y" ]] || { echo "Aborted."; exit 0; }
   echo ""
