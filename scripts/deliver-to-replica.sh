@@ -354,9 +354,9 @@ log "Patch size: $(wc -l < "$PATCH_FILE") lines"
 # ── patch mode: write files and exit ──────────────────────────
 if [[ "$OUTPUT_MODE" == "patch" ]]; then
   PATCH_SET_NAME="sync-${TIMESTAMP}-${PARTY}"
-  PATCH_SET_DIR="${PATCH_OUTPUT_DIR}/${PATCH_SET_NAME}"
-  PATCH_SET_ZIP="${PATCH_OUTPUT_DIR}/${PATCH_SET_NAME}.zip"
   mkdir -p "$PATCH_OUTPUT_DIR"
+  PATCH_OUTPUT_DIR="$(cd "$PATCH_OUTPUT_DIR" && pwd)"  # resolve to absolute path
+  PATCH_SET_ZIP="${PATCH_OUTPUT_DIR}/${PATCH_SET_NAME}.zip"
   WORK_PATCH_DIR=$(mktemp -d /tmp/patch-set-XXXXXX)
   cleanup_patch() { rm -rf "$WORK_PATCH_DIR"; rm -f "$PATCH_FILE"; }
   trap cleanup_patch EXIT
