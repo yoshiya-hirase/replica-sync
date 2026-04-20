@@ -299,8 +299,29 @@ apply_patch() {
     git rm -rf . --quiet
   fi
   log "Applying patch..."
-  git apply --whitespace=nowarn "$PATCH_FILE" \
-    || die "Patch apply failed. Resolve conflicts and re-run."
+  local apply_err
+  apply_err=$(mktemp /tmp/apply-err-XXXXXX)
+  if ! git apply --whitespace=nowarn "$PATCH_FILE" 2>"$apply_err"; then
+    # If some files already exist in the working tree (e.g. a GitHub-initialized
+    # README.md that was not removed because FIRST_DELIVERY=false), remove them
+    # and retry once.
+    if grep -q "already exists in working directory" "$apply_err"; then
+      log "Detected pre-existing files; removing and retrying..."
+      grep "already exists in working directory" "$apply_err" \
+        | sed 's/error: \(.*\): already exists in working directory/\1/' \
+        | while IFS= read -r f; do
+            [[ -f "$f" ]] && rm -f "$f" && log "  removed: $f"
+          done
+      rm -f "$apply_err"
+      git apply --whitespace=nowarn "$PATCH_FILE" \
+        || die "Patch apply failed after cleanup. Resolve conflicts and re-run."
+    else
+      cat "$apply_err" >&2
+      rm -f "$apply_err"
+      die "Patch apply failed. Resolve conflicts and re-run."
+    fi
+  fi
+  rm -f "$apply_err"
 }
 
 if [[ "$MODE" == "pr" ]]; then
@@ -395,7 +416,7 @@ TIMESTAMP=$(date +%Y%m%d-%H%M%S)
 PATCH_FILE=$(mktemp /tmp/deliver-XXXXXX.patch)
 trap 'rm -f "$PATCH_FILE"' EXIT
 
-git diff --binary "${LAST_SYNC_SHA}..${PUBLISH_HEAD}" > "$PATCH_FILE"
+git diff --binary --full-index "${LAST_SYNC_SHA}..${PUBLISH_HEAD}" > "$PATCH_FILE"
 
 if [[ ! -s "$PATCH_FILE" ]]; then
   if [[ "$RESEND" != "true" ]]; then
@@ -434,7 +455,7 @@ if [[ ! -s "$PATCH_FILE" ]]; then
     log "--resend: regenerating from publish root (${LAST_SYNC_SHA:0:8}..${PUBLISH_HEAD:0:8})"
   fi
 
-  git diff --binary "${LAST_SYNC_SHA}..${PUBLISH_HEAD}" > "$PATCH_FILE"
+  git diff --binary --full-index "${LAST_SYNC_SHA}..${PUBLISH_HEAD}" > "$PATCH_FILE"
 
   if [[ ! -s "$PATCH_FILE" ]]; then
     ok "--resend: still no diff after base lookup. Nothing to regenerate."
