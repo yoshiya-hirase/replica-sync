@@ -205,7 +205,7 @@ gh pr list --repo <GITHUB_USER>/test-internal-monorepo \
 #### Step 9: Run deliver-to-replica.sh (push mode)
 
 ```bash
-./scripts/deliver-to-replica.sh --party acme "initial: v1"
+./scripts/deliver-to-replica.sh --party acme --output push "initial: v1"
 ```
 
 First delivery — no `last-sync` tag exists yet → delivers the full content from the first commit of publish.
@@ -254,36 +254,41 @@ After merging the PR:
 #### Step 13: Run deliver-to-replica.sh (patch mode)
 
 ```bash
-./scripts/deliver-to-replica.sh --party beta --output patch "initial: v1"
+./scripts/deliver-to-replica.sh --party beta "initial: v1"
 ```
 
-Files are generated in the `test-patches/` directory:
+A zip is generated in `test-patches/`:
 ```
 test-patches/
-├── sync-TIMESTAMP.patch
-├── sync-TIMESTAMP-meta.json
-├── sync-TIMESTAMP-summary.txt
-└── sync-TIMESTAMP-apply.sh
+└── sync-TIMESTAMP-beta.zip
+    ├── README.md                        ← apply instructions
+    ├── sync-TIMESTAMP.patch
+    ├── sync-TIMESTAMP-meta.json
+    ├── sync-TIMESTAMP-summary.txt
+    ├── sync-TIMESTAMP-apply.sh
+    └── sync-TIMESTAMP-bootstrap/        ← first delivery only
 ```
 
 #### Step 14: Apply Patch on 3rd Party Side
 
-Run the generated `apply.sh` in the beta repo:
+Extract the zip and run `apply.sh` in the beta repo:
 
 ```bash
 cd <TEST_DIR>/beta
-bash <path-to-apply.sh>
+unzip <path-to-sync-TIMESTAMP-beta.zip>
+cd sync-TIMESTAMP-beta/
+bash sync-TIMESTAMP-apply.sh   # any branch is fine — switches to main automatically
 ```
 
-For PR mode, a PR is created on GitHub. Merge it before continuing.
+For PR mode (default), a PR is created on GitHub. Merge it before continuing.
 
 #### Step 15: Verify Delivery & Check Tags
 
-Merge the galaxy repo sync PR on GitHub first (since `05-verify-delivery.sh` compares against the party repo's `main`).
+Merge the beta repo sync PR on GitHub first (since `05-verify-delivery.sh` compares against the party repo's `main`).
 
 ```bash
-./test/05-verify-delivery.sh --party galaxy
-./test/06-show-tags.sh --party galaxy
+./test/05-verify-delivery.sh --party beta
+./test/06-show-tags.sh --party beta
 ```
 
 ---
