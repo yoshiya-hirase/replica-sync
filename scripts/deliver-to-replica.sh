@@ -395,7 +395,7 @@ TIMESTAMP=$(date +%Y%m%d-%H%M%S)
 PATCH_FILE=$(mktemp /tmp/deliver-XXXXXX.patch)
 trap 'rm -f "$PATCH_FILE"' EXIT
 
-git diff "${LAST_SYNC_SHA}..${PUBLISH_HEAD}" > "$PATCH_FILE"
+git diff --binary "${LAST_SYNC_SHA}..${PUBLISH_HEAD}" > "$PATCH_FILE"
 
 if [[ ! -s "$PATCH_FILE" ]]; then
   if [[ "$RESEND" != "true" ]]; then
@@ -418,20 +418,28 @@ if [[ ! -s "$PATCH_FILE" ]]; then
   if [[ -n "$PREV_BASE_SHA" ]]; then
     log "--resend: regenerating from ${PREV_BASE_SHA:0:8}..${PUBLISH_HEAD:0:8}"
     LAST_SYNC_SHA="$PREV_BASE_SHA"
+    FIRST_DELIVERY=false
   else
-    # Only one prior delivery — regenerate from publish root
+    # Only one prior sync tag — regenerate from publish root.
+    # Treat as first delivery only if no init tag exists for this party
+    # (meaning the 3rd party never successfully applied the initial delivery).
     LAST_SYNC_SHA=$(git rev-list --max-parents=0 "${INTERNAL_REMOTE}/${PUBLISH_BRANCH}")
-    log "--resend: only one prior sync; regenerating from publish root (${LAST_SYNC_SHA:0:8}..${PUBLISH_HEAD:0:8})"
+    PARTY_INIT_EXISTS=$(git tag -l "replica/${PARTY}/init-*" | head -1)
+    if [[ -z "$PARTY_INIT_EXISTS" ]]; then
+      FIRST_DELIVERY=true
+      log "--resend: no init tag found; treating as first delivery"
+    else
+      FIRST_DELIVERY=false
+    fi
+    log "--resend: regenerating from publish root (${LAST_SYNC_SHA:0:8}..${PUBLISH_HEAD:0:8})"
   fi
 
-  git diff "${LAST_SYNC_SHA}..${PUBLISH_HEAD}" > "$PATCH_FILE"
+  git diff --binary "${LAST_SYNC_SHA}..${PUBLISH_HEAD}" > "$PATCH_FILE"
 
   if [[ ! -s "$PATCH_FILE" ]]; then
     ok "--resend: still no diff after base lookup. Nothing to regenerate."
     exit 0
   fi
-
-  FIRST_DELIVERY=false  # resend is never treated as a first delivery
 fi
 
 log "Patch size: $(wc -l < "$PATCH_FILE") lines"
