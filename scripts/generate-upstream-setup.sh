@@ -704,6 +704,60 @@ install_new_only() {
   fi
 }
 
+# On upgrade: compare sync.conf.example against the user's sync.conf and
+# report any variables that are new in the example but absent from the user's
+# file. Missing entries are appended as commented-out lines so the user can
+# review and uncomment them without having to diff the files manually.
+check_conf_migration() {
+  local example="\$1" user_conf="\$2"
+
+  # Extract all top-level variable/array names from a bash conf file
+  conf_varnames() {
+    grep -Eo '^[A-Za-z_][A-Za-z_0-9]*' "\$1" | sort -u
+  }
+
+  local v defline
+  local missing=()
+
+  while IFS= read -r v; do
+    conf_varnames "\$user_conf" | grep -qx "\$v" || missing+=("\$v")
+  done < <(conf_varnames "\$example")
+
+  [[ \${#missing[@]} -eq 0 ]] && return 0
+
+  echo ""
+  echo "  ┌──────────────────────────────────────────────────────────────────┐"
+  echo "  │  New config parameters — action may be required                  │"
+  echo "  └──────────────────────────────────────────────────────────────────┘"
+  echo "  The following keys are in sync.conf.example but missing from your"
+  echo "  sync.conf. They have been appended as comments — uncomment and set"
+  echo "  as needed, then re-run the script that needs them."
+  echo ""
+  for v in "\${missing[@]}"; do
+    defline=\$(grep -E "^\${v}[[:space:]]*(=|\()" "\$example" | head -1)
+    echo "      \${defline}"
+  done
+  echo ""
+
+  {
+    printf '\n'
+    printf '# ── New parameters added by replica-sync upgrade (%s) ──────\n' "\$(date '+%Y-%m-%d')"
+    printf '# These parameters are in sync.conf.example but were not in your\n'
+    printf '# sync.conf. Uncomment and edit each one as needed.\n'
+    printf '# See sync.conf.example for full descriptions and defaults.\n'
+    for v in "\${missing[@]}"; do
+      defline=\$(grep -E "^\${v}[[:space:]]*(=|\()" "\$example" | head -1)
+      printf '#\n'
+      printf '# %s\n' "\${defline}"
+    done
+    printf '#\n'
+  } >> "\$user_conf"
+
+  echo "  Appended to: \${user_conf}"
+  echo "  Open and review: \${EDITOR:-vi} \${user_conf}"
+  echo ""
+}
+
 # Always overwrite: scripts
 for s in "\${RS_SRC}/scripts/"*.sh; do
   install_file "\$s" "\${RS_TARGET}/scripts/\$(basename "\$s")"
@@ -728,6 +782,12 @@ log "Installed config templates, bootstrap workflow, SETUP.md"
 install_new_only "\${RS_SRC}/config/sync.conf.example" \
                  "\${RS_TARGET}/config/sync.conf" \
                  "replica-sync/config/sync.conf"
+
+# On upgrade, detect any config keys added in the new version
+if [[ "\$IS_UPGRADE" == "true" ]]; then
+  check_conf_migration "\${RS_SRC}/config/sync.conf.example" \
+                       "\${RS_TARGET}/config/sync.conf"
+fi
 
 # Optional: CI workflow
 if [[ "\$HAS_CI_WORKFLOW" == "true" ]]; then
