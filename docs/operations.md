@@ -434,6 +434,7 @@ distribution. Both paths use the same generated `install.sh` for consistent beha
 
 | Source (in package) | Destination (in monorepo) | Notes |
 |---|---|---|
+| `replica-sync/VERSION` | `replica-sync/VERSION` | Always overwritten |
 | `replica-sync/scripts/*.sh` | `replica-sync/scripts/` | Executable; always overwritten |
 | `replica-sync/config/sync.conf.example` | `replica-sync/config/` | Always overwritten |
 | `replica-sync/config/party/party.conf.example` | `replica-sync/config/party/` | Always overwritten |
@@ -487,8 +488,9 @@ Use this when someone else owns the target monorepo and will perform the install
 upstream-setup-TIMESTAMP/
 ├── install.sh                                      ← run this with --target
 ├── replica-sync/
+│   ├── VERSION                                     ← version of this package
 │   ├── SETUP.md                                    ← full guide
-│   ├── scripts/                                    ← all 7 sync scripts
+│   ├── scripts/                                    ← all sync scripts
 │   ├── config/
 │   │   ├── sync.conf.example
 │   │   ├── party/party.conf.example
@@ -516,10 +518,72 @@ if not, it will be skipped.
 
 | File type | Behavior on upgrade |
 |---|---|
-| Scripts, config templates, SETUP.md | Always overwritten |
+| `VERSION`, scripts, config templates, SETUP.md | Always overwritten |
 | `config/sync.conf` | **Preserved** — contains local paths |
 | `config/party/*.conf` | **Preserved** — contains per-party credentials |
 | `.gitignore` | Appended only if fragment not already present |
+
+#### Version display
+
+`install.sh` reads the version from the package and from the installed `VERSION` file.
+The output header and summary both show the version transition:
+
+```
+Upgrading replica-sync 1.0.0 → 1.1.0 in: /path/to/internal-monorepo
+...
+[  ok ] Upgraded replica-sync 1.0.0 → 1.1.0 (16 files updated, 1 preserved)
+
+Review changes before committing:
+  cd /path/to/internal-monorepo
+  git diff replica-sync/
+  git add replica-sync/
+  git commit -m "chore: upgrade replica-sync to 1.1.0"
+```
+
+To check the currently installed version at any time:
+
+```bash
+cat replica-sync/VERSION
+```
+
+#### New config parameters after upgrade
+
+When a new version adds a parameter to `sync.conf.example` that is absent from your
+`sync.conf`, `install.sh` automatically detects it and:
+
+1. **Prints a warning** listing the missing parameters with their example values:
+
+```
+  ┌──────────────────────────────────────────────────────────────────┐
+  │  New config parameters — action may be required                  │
+  └──────────────────────────────────────────────────────────────────┘
+  The following keys are in sync.conf.example but missing from your
+  sync.conf. They have been appended as comments — uncomment and set
+  as needed, then re-run the script that needs them.
+
+      INTERNAL_BRANCH="main"
+
+  Appended to: /path/to/replica-sync/config/sync.conf
+  Open and review: vi /path/to/replica-sync/config/sync.conf
+```
+
+2. **Appends them as commented-out lines** to the bottom of your `sync.conf`:
+
+```bash
+# ── New parameters added by replica-sync upgrade (2026-05-07) ──────
+# These parameters are in sync.conf.example but were not in your
+# sync.conf. Uncomment and edit each one as needed.
+# See sync.conf.example for full descriptions and defaults.
+#
+# INTERNAL_BRANCH="main"
+#
+```
+
+To activate a new parameter, open `sync.conf`, find the appended block at the bottom,
+uncomment the line, and set the value for your environment.
+
+This check is automatic — no version bookkeeping required. Any variable added to
+`sync.conf.example` in future versions will be detected on the next upgrade.
 
 **Resulting directory structure in the upstream monorepo after installation:**
 

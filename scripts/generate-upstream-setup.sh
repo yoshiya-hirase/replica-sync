@@ -107,6 +107,11 @@ for s in "${SCRIPTS[@]}"; do
 done
 log "Built ${#SCRIPTS[@]} scripts"
 
+# version
+[[ -f "${REPO_ROOT}/VERSION" ]] || die "VERSION file not found at ${REPO_ROOT}/VERSION"
+cp "${REPO_ROOT}/VERSION" "${RS_DIR}/VERSION"
+log "Built version: $(cat "${REPO_ROOT}/VERSION")"
+
 # config templates
 cp "${REPO_ROOT}/config/sync.conf.example" \
    "${RS_DIR}/config/sync.conf.example"
@@ -672,12 +677,22 @@ RS_TARGET="\${TARGET}/replica-sync"
 IS_UPGRADE="false"
 [[ -d "\$RS_TARGET" ]] && IS_UPGRADE="true"
 
+NEW_VERSION="\$(cat "\${RS_SRC}/VERSION" 2>/dev/null || echo "unknown")"
+OLD_VERSION=""
+if [[ "\$IS_UPGRADE" == "true" ]] && [[ -f "\${RS_TARGET}/VERSION" ]]; then
+  OLD_VERSION="\$(cat "\${RS_TARGET}/VERSION")"
+fi
+
 if [[ "\$IS_UPGRADE" == "true" ]]; then
   echo ""
-  echo "Upgrading existing installation at: \${TARGET}"
+  if [[ -n "\$OLD_VERSION" ]]; then
+    echo "Upgrading replica-sync \${OLD_VERSION} → \${NEW_VERSION} in: \${TARGET}"
+  else
+    echo "Upgrading replica-sync to \${NEW_VERSION} in: \${TARGET}"
+  fi
 else
   echo ""
-  echo "Installing into: \${TARGET}"
+  echo "Installing replica-sync \${NEW_VERSION} into: \${TARGET}"
   mkdir -p "\${RS_TARGET}/config/party"
 fi
 
@@ -765,7 +780,9 @@ done
 chmod +x "\${RS_TARGET}/scripts/"*.sh
 log "Installed scripts"
 
-# Always overwrite: config templates, bootstrap workflow, docs
+# Always overwrite: version, config templates, bootstrap workflow, docs
+install_file "\${RS_SRC}/VERSION" \
+             "\${RS_TARGET}/VERSION"
 install_file "\${RS_SRC}/config/sync.conf.example" \
              "\${RS_TARGET}/config/sync.conf.example"
 install_file "\${RS_SRC}/config/party/party.conf.example" \
@@ -776,7 +793,7 @@ install_file "\${RS_SRC}/SETUP.md" \
              "\${RS_TARGET}/SETUP.md"
 install_file "\${RS_SRC}/.gitignore-fragment" \
              "\${RS_TARGET}/.gitignore-fragment"
-log "Installed config templates, bootstrap workflow, SETUP.md"
+log "Installed version, config templates, bootstrap workflow, SETUP.md"
 
 # Preserve on upgrade: sync.conf (copy example as starting point on fresh install)
 install_new_only "\${RS_SRC}/config/sync.conf.example" \
@@ -809,7 +826,11 @@ fi
 
 echo ""
 if [[ "\$IS_UPGRADE" == "true" ]]; then
-  ok "Upgrade complete: \${UPDATED} files updated, \${SKIPPED} preserved"
+  if [[ -n "\$OLD_VERSION" ]]; then
+    ok "Upgraded replica-sync \${OLD_VERSION} → \${NEW_VERSION} (\${UPDATED} files updated, \${SKIPPED} preserved)"
+  else
+    ok "Upgraded to replica-sync \${NEW_VERSION} (\${UPDATED} files updated, \${SKIPPED} preserved)"
+  fi
   echo ""
   echo "Review changes before committing:"
   echo "  cd \${TARGET}"
@@ -817,9 +838,9 @@ if [[ "\$IS_UPGRADE" == "true" ]]; then
   echo "  git add replica-sync/"
   [[ "\$HAS_CI_WORKFLOW" == "true" ]] && \
     echo "  git add .github/workflows/sync-replica.yml"
-  echo "  git commit -m \"chore: upgrade replica-sync tooling\""
+  echo "  git commit -m \"chore: upgrade replica-sync to \${NEW_VERSION}\""
 else
-  ok "Install complete: \${UPDATED} files installed, \${SKIPPED} already existed"
+  ok "Installed replica-sync \${NEW_VERSION} (\${UPDATED} files installed, \${SKIPPED} already existed)"
   echo ""
   echo "Next steps:"
   echo "  cd \${TARGET}"
@@ -827,7 +848,7 @@ else
   echo "  git add replica-sync/ .gitignore"
   [[ "\$HAS_CI_WORKFLOW" == "true" ]] && \
     echo "  git add .github/workflows/sync-replica.yml"
-  echo "  git commit -m \"chore: add replica-sync tooling\""
+  echo "  git commit -m \"chore: add replica-sync \${NEW_VERSION}\""
 fi
 INSTALLEOF
 
