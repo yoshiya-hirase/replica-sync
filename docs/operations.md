@@ -143,11 +143,14 @@ git push origin milestone/2024-Q1
 ### Step 3 — Milestone sync loop (repeat each milestone)
 
 ```bash
-# Phase 1: Stage internal changes to publish branch
+# Phase 1: Tag the snapshot you want to publish, then stage it
 git tag -a milestone/2024-Q2 -m "Q2 milestone"
 git push origin milestone/2024-Q2
 
-./replica-sync/scripts/stage-publish.sh "sync: 2024-Q2"
+# Recommended: pass --tag to pin the diff to the tagged snapshot.
+# Without --tag, the diff goes up to HEAD at run time, which may
+# include commits added after the tag was created.
+./replica-sync/scripts/stage-publish.sh --tag milestone/2024-Q2 "sync: 2024-Q2"
 # → opens GHE PR: sync/TIMESTAMP → publish
 # → review: verify diff, EXCLUDE_PATHS, Bot author
 # → merge the PR
@@ -830,23 +833,31 @@ sync/TIMESTAMP: P3 ─ (PR branch before merge)
 
 ### B-2. Phase 1: Stage to publish branch (`stage-publish.sh`)
 
-Squash the diff from `internal/main` and create a PR to `publish` on GHE.
+Squash the diff from `internal/<INTERNAL_BRANCH>` and create a PR to `publish` on GHE.
 No `--party` argument needed — the publish branch is party-independent.
 
 ```bash
+# Recommended: pin the diff to a milestone tag
+./scripts/stage-publish.sh --tag milestone/v2 "sync: 2024-Q1"
+
+# Without --tag: diff goes up to HEAD at the time of the run
 ./scripts/stage-publish.sh "sync: 2024-Q1"
 ```
+
+**`--tag` option:** Passing `--tag <tag>` sets the upper bound of the diff to the tagged
+commit rather than `HEAD`. This prevents commits added between tagging and running the
+script from slipping into the PR. The tag is also shown in the PR body for traceability.
 
 Internal flow:
 
 ```
-1. Get diff between publish HEAD and internal/main HEAD
-2. Generate patch with EXCLUDE_PATHS filtered out
+1. Resolve diff upper bound: --tag commit (if given) or HEAD
+2. Get diff between publish HEAD and upper bound, with EXCLUDE_PATHS filtered out
 3. Create sync/TIMESTAMP branch from publish in a worktree
 4. Apply patch and squash commit (author=Bot)
 5. Push sync branch to GHE
 6. Create PR on GHE: sync/TIMESTAMP → publish
-   (PR body includes list of internal commits)
+   (PR body includes commit range, tag name if used, and list of internal commits)
 ```
 
 Review and approve the PR, then merge to `publish`.

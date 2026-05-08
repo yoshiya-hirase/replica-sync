@@ -2,12 +2,16 @@
 # stage-publish.sh
 #
 # Milestone sync - Phase 1.
-# Squashes changes from internal/main (EXCLUDE_PATHS applied) and opens a PR
+# Squashes changes from internal/<INTERNAL_BRANCH> (EXCLUDE_PATHS applied) and opens a PR
 # on GHE targeting the publish branch for internal review.
 # After review and merge, run deliver-to-replica.sh to push to external replicas.
 #
 # Usage:
+#   # Diff from last publish up to HEAD (current branch tip)
 #   ./scripts/stage-publish.sh "sync: 2024-Q1"
+#
+#   # Diff from last publish up to a specific tag (recommended for milestone releases)
+#   ./scripts/stage-publish.sh --tag milestone/v2 "sync: 2024-Q1"
 #
 set -euo pipefail
 
@@ -32,11 +36,13 @@ die() { echo -e "\033[1;31m[ err  ]\033[0m $*" >&2; exit 1; }
 
 # ── Argument parsing ───────────────────────────────────────────
 COMMIT_MSG=""
+SYNC_TAG=""   # optional: tag to use as the upper bound of the diff
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
-    --*) die "Unknown option: $1" ;;
-    *)   COMMIT_MSG="$1"; shift ;;
+    --tag)  SYNC_TAG="$2"; shift 2 ;;
+    --*)    die "Unknown option: $1" ;;
+    *)      COMMIT_MSG="$1"; shift ;;
   esac
 done
 
@@ -49,6 +55,7 @@ SYNC_BRANCH="sync/${TIMESTAMP}"
 log "Commit message: $COMMIT_MSG"
 log "Publish branch: $PUBLISH_BRANCH"
 log "Sync branch   : $SYNC_BRANCH"
+[[ -n "$SYNC_TAG" ]] && log "Sync tag      : $SYNC_TAG"
 
 # ── Helpers ────────────────────────────────────────────────────
 build_exclude_args() {
@@ -72,7 +79,16 @@ git rev-parse --verify "refs/remotes/${INTERNAL_REMOTE}/${PUBLISH_BRANCH}" >/dev
          "  ./scripts/init-replica.sh <start-tag>"
 
 PUBLISH_HEAD=$(git rev-parse "${INTERNAL_REMOTE}/${PUBLISH_BRANCH}")
-INTERNAL_HEAD=$(git rev-parse HEAD)
+
+if [[ -n "$SYNC_TAG" ]]; then
+  git rev-parse --verify "refs/tags/${SYNC_TAG}" >/dev/null 2>&1 \
+    || die "Tag not found: ${SYNC_TAG}\n  Available tags: $(git tag -l | head -10 | tr '\n' ' ')"
+  INTERNAL_HEAD=$(git rev-parse "${SYNC_TAG}^{}")
+  log "Diff upper bound: tag ${SYNC_TAG} (${INTERNAL_HEAD:0:8})"
+else
+  INTERNAL_HEAD=$(git rev-parse HEAD)
+  log "Diff upper bound: HEAD (${INTERNAL_HEAD:0:8})"
+fi
 
 if [[ "$PUBLISH_HEAD" == "$INTERNAL_HEAD" ]]; then
   ok "No diff. Publish branch is up to date."
@@ -90,7 +106,7 @@ cleanup() {
 }
 trap cleanup EXIT
 
-git diff "${PUBLISH_HEAD}..HEAD" -- . ${EXCLUDE_ARGS[@]+"${EXCLUDE_ARGS[@]}"} > "$PATCH_FILE"
+git diff "${PUBLISH_HEAD}..${INTERNAL_HEAD}" -- . ${EXCLUDE_ARGS[@]+"${EXCLUDE_ARGS[@]}"} > "$PATCH_FILE"
 
 if [[ ! -s "$PATCH_FILE" ]]; then
   ok "No diff after applying exclude paths. Skipping."
@@ -140,12 +156,15 @@ SUMMARY_FOR_PR=$(
     -- . ${EXCLUDE_ARGS[@]+"${EXCLUDE_ARGS[@]}"} | head -50
 )
 
+TAG_ROW=""
+[[ -n "$SYNC_TAG" ]] && TAG_ROW="| Tag | \`${SYNC_TAG}\` |"$'\n'
+
 PR_BODY="## ${COMMIT_MSG}
 
 | Field | Value |
 |---|---|
 | Diff range | \`${PUBLISH_HEAD:0:8}\`..\`${INTERNAL_HEAD:0:8}\` |
-| Target branch | \`${PUBLISH_BRANCH}\` |
+${TAG_ROW}| Target branch | \`${PUBLISH_BRANCH}\` |
 | Created at | $(date '+%Y-%m-%d %H:%M:%S') |
 
 ## Included internal commits

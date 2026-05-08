@@ -227,15 +227,20 @@ applied) and opens a GHE PR (`sync/TIMESTAMP → publish`) for internal review.
 After the PR is reviewed and merged, run `deliver-to-replica.sh` to push to external replicas.
 
 ```
-./scripts/stage-publish.sh [<commit-message>]
+./scripts/stage-publish.sh [--tag <tag>] [<commit-message>]
 ```
 
-| Argument | Required | Description |
+| Option / Argument | Required | Description |
 |---|:---:|---|
+| `--tag <tag>` | No | Git tag to use as the upper bound of the diff (e.g. `milestone/v2`). Recommended for milestone releases to avoid including commits added after the tag. If omitted, defaults to `HEAD`. |
 | `<commit-message>` | No | Commit message for the squash commit (default: `sync: YYYY-MM-DD`) |
 
 **Examples:**
 ```bash
+# Diff up to a specific milestone tag (recommended)
+./scripts/stage-publish.sh --tag milestone/v2 "sync: 2024-Q2"
+
+# Diff up to HEAD (quick sync, no tag pinning)
 ./scripts/stage-publish.sh "sync: 2024-Q2"
 
 ./scripts/stage-publish.sh   # uses today's date as message
