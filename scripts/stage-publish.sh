@@ -98,10 +98,12 @@ fi
 log "Diff range: ${PUBLISH_HEAD:0:8}..${INTERNAL_HEAD:0:8}"
 
 # ── Step 2: Generate diff patch ───────────────────────────────
-PATCH_FILE=$(mktemp /tmp/stage-publish-XXXXXX.patch)
-WORK_DIR=$(mktemp -d /tmp/stage-publish-work-XXXXXX)
+STAGE_TMP_DIR=$(mktemp -d)
+PATCH_FILE="${STAGE_TMP_DIR}/stage-publish-${TIMESTAMP}.patch"
+WORK_DIR="${STAGE_TMP_DIR}/worktree"
+mkdir -p "$WORK_DIR"
 cleanup() {
-  rm -f "$PATCH_FILE"
+  rm -rf "$STAGE_TMP_DIR"
   git -C "$INTERNAL_REPO" worktree remove "$WORK_DIR" --force 2>/dev/null || true
 }
 trap cleanup EXIT
@@ -130,7 +132,7 @@ if ! git apply --3way --whitespace=nowarn "$PATCH_FILE" 2>"$APPLY_ERR"; then
   rm -f "$APPLY_ERR"
   echo "" >&2
   echo "Patch file kept for inspection: $PATCH_FILE" >&2
-  trap - EXIT   # cancel cleanup so patch file is preserved
+  trap - EXIT   # cancel cleanup so temp dir (and patch) is preserved
   git -C "$INTERNAL_REPO" worktree remove "$WORK_DIR" --force 2>/dev/null || true
   die "Patch apply failed. Review the errors above."
 fi
