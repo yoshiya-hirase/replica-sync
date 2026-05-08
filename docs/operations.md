@@ -987,6 +987,14 @@ previous sync base (useful for resending lost files without changing the deliver
 Since the `publish` branch is already in a clean state with exclusions applied,
 `deliver-to-replica.sh` (Phase 2) does not re-apply exclusions.
 
+> **Important — `EXCLUDE_PATHS` does not remove files already in the publish branch.**
+>
+> Adding a path to `EXCLUDE_PATHS` means "do not include changes to this path in
+> future diffs." It does **not** delete files that were synced to the `publish`
+> branch in a previous run. If a path was included in an earlier sync and you now
+> want it gone, you must explicitly remove it from the `publish` branch via a
+> manual cleanup commit. See [Troubleshooting — Removing a file from the publish branch](#removing-a-file-from-the-publish-branch).
+
 ```bash
 EXCLUDE_PATHS=(
   "services/internal-only/"
@@ -1574,3 +1582,54 @@ Adding the Bot account to the Ruleset's `Bypass list` allows
 - [ ] Notify external PR of result via `notify-external-pr.sh`
 - [ ] For accepted: close external PR after next milestone sync
 - [ ] For rejected: external PR is already auto-closed
+
+---
+
+## Troubleshooting
+
+### Removing a file from the publish branch
+
+**Symptom**: A path (e.g. `replica-sync/`) that you now want to exclude is still present in
+the `publish` branch even after adding it to `EXCLUDE_PATHS` and running `stage-publish.sh`.
+
+**Why this happens**: `EXCLUDE_PATHS` tells `stage-publish.sh` "do not include changes to
+this path in future diffs."  It does **not** retroactively delete anything that was already
+committed to the `publish` branch in a previous run.  The path lives in the `publish` branch
+history and will remain there until explicitly removed with a cleanup commit.
+
+**Procedure**:
+
+1. **Create a cleanup branch from `publish`**
+
+   ```bash
+   cd "$INTERNAL_REPO"
+   git fetch "$INTERNAL_REMOTE"
+   git checkout -b cleanup/remove-replica-sync "${INTERNAL_REMOTE}/publish"
+   ```
+
+2. **Delete the path and commit**
+
+   ```bash
+   git rm -rf replica-sync/       # replace with the path you want to remove
+   git commit -m "chore: remove replica-sync/ from publish branch"
+   git push "$INTERNAL_REMOTE" cleanup/remove-replica-sync
+   ```
+
+3. **Open a PR on GHE: `cleanup/...` → `publish` and merge it**
+
+   After the PR is merged the `publish` branch no longer contains the path.
+
+4. **Run the next delivery as usual**
+
+   ```bash
+   ./scripts/deliver-to-replica.sh --party <name> "chore: remove replica-sync/"
+   ```
+
+   The diff between the previous `replica/<party>/last-sync` tag and the new `publish` HEAD
+   will include the deletion, so the path will be removed from the external replica on the
+   next delivery.
+
+> **Note**: If you need to rebuild a party's repo from scratch (e.g. the replica was
+> re-initialized on GitHub), use the `--rebuild` flag instead of the normal flow.
+> See [B-5. Delivery Method Selection Guide](#b-5-delivery-method-selection-guide) and
+> the `--rebuild` option in [scripts.md](scripts.md).
