@@ -373,6 +373,7 @@ Column-to-script mapping:
 |---|---|:---:|:---:|:---:|:---:|---|
 | `INTERNAL_REPO` | Local path to internal monorepo (absolute) | **Required** | **Required** | **Required** | apply/cherry-pick only | `/path/to/internal-monorepo` |
 | `INTERNAL_REMOTE` | GHE remote name | **Required** | **Required** | ― | apply/cherry-pick only | `origin` |
+| `INTERNAL_BRANCH` | Primary development branch name | ― | **Required** | ― | ― | `main` (default); set to `dev` etc. if your repo uses a different primary branch |
 | `GH_HOST` | GHE hostname (used as `GH_HOST` for `gh` CLI) | **Required** | **Required** | ― | apply only | `github.your-company.com` |
 | `GH_ORG` | GHE organization name | **Required** | **Required** | ― | apply only | `org` |
 | `GH_REPO` | GHE repository name | **Required** | **Required** | ― | apply only | `internal` |

@@ -222,7 +222,7 @@ This makes it safe to run `init-replica.sh` multiple times until the generated P
 
 **Operation [B-1] — Stage internal changes to publish branch**
 
-Squashes all changes since the last sync from `internal/main` (with `EXCLUDE_PATHS`
+Squashes all changes since the last sync from `internal/<INTERNAL_BRANCH>` (with `EXCLUDE_PATHS`
 applied) and opens a GHE PR (`sync/TIMESTAMP → publish`) for internal review.
 After the PR is reviewed and merged, run `deliver-to-replica.sh` to push to external replicas.
 
