@@ -106,7 +106,7 @@ cleanup() {
 }
 trap cleanup EXIT
 
-git diff "${PUBLISH_HEAD}..${INTERNAL_HEAD}" -- . ${EXCLUDE_ARGS[@]+"${EXCLUDE_ARGS[@]}"} > "$PATCH_FILE"
+git diff --binary --full-index "${PUBLISH_HEAD}..${INTERNAL_HEAD}" -- . ${EXCLUDE_ARGS[@]+"${EXCLUDE_ARGS[@]}"} > "$PATCH_FILE"
 
 if [[ ! -s "$PATCH_FILE" ]]; then
   ok "No diff after applying exclude paths. Skipping."
