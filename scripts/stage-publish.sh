@@ -122,8 +122,19 @@ git worktree add "$WORK_DIR" -b "$SYNC_BRANCH" "${INTERNAL_REMOTE}/${PUBLISH_BRA
 # ── Step 4: Apply patch and create squash commit ──────────────
 cd "$WORK_DIR"
 log "Applying patch..."
-git apply --3way --whitespace=nowarn "$PATCH_FILE" \
-  || die "Patch apply failed. Resolve conflicts and re-run."
+APPLY_ERR=$(mktemp /tmp/stage-apply-err-XXXXXX)
+if ! git apply --3way --whitespace=nowarn "$PATCH_FILE" 2>"$APPLY_ERR"; then
+  echo "" >&2
+  echo "git apply error output:" >&2
+  cat "$APPLY_ERR" >&2
+  rm -f "$APPLY_ERR"
+  echo "" >&2
+  echo "Patch file kept for inspection: $PATCH_FILE" >&2
+  trap - EXIT   # cancel cleanup so patch file is preserved
+  git -C "$INTERNAL_REPO" worktree remove "$WORK_DIR" --force 2>/dev/null || true
+  die "Patch apply failed. Review the errors above."
+fi
+rm -f "$APPLY_ERR"
 
 git add -A
 
