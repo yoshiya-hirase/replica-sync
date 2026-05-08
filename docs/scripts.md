@@ -269,11 +269,16 @@ Run after `init-replica.sh` or after a `stage-publish.sh` PR has been merged.
 | `--mode pr` | `pr` | Create a PR on the external replica (push output only) |
 | `--mode direct` | | Push directly to `main` without a PR (push output only) |
 | `--resend` | | Re-generate patch without advancing sync tags (patch output only) |
+| `--rebuild` | | Delete all `replica/<party>/*` tags and deliver as a fresh first delivery |
 | `<commit-message>` | `sync: YYYY-MM-DD` | Commit message for the sync commit |
 
 `--resend` is for patch mode only. When the current publish HEAD has already been delivered
 (no diff), it looks back to the previous sync tag and regenerates the patch from there.
 Sync tags are not updated, so the delivery state is unchanged.
+
+`--rebuild` is for when the 3rd party repo has been recreated from scratch. It deletes all
+`replica/<party>/*` tags (with a confirmation prompt) and then performs a fresh first delivery
+covering the full current publish branch snapshot. Cannot be combined with `--resend`.
 
 **Examples:**
 ```bash

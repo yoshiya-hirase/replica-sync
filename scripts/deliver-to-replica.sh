@@ -18,6 +18,9 @@
 #   # Re-generate patch without advancing sync tags (e.g. to resend lost files)
 #   ./scripts/deliver-to-replica.sh --party acme --resend "sync: 2024-Q1"
 #
+#   # Reset sync state and deliver full snapshot (e.g. after recreating the 3rd party repo)
+#   ./scripts/deliver-to-replica.sh --party acme --rebuild "initial: rebuild"
+#
 #   # Push as a PR to the replica
 #   ./scripts/deliver-to-replica.sh --party acme --output push "sync: 2024-Q1"
 #
@@ -49,19 +52,22 @@ MODE="pr"            # pr | direct
 PARTY=""
 COMMIT_MSG=""
 RESEND="false"       # true = regenerate patch without advancing sync tags
+REBUILD="false"      # true = delete party tags and deliver as first delivery
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
-    --output) OUTPUT_MODE="$2"; shift 2 ;;
-    --mode)   MODE="$2";        shift 2 ;;
-    --party)  PARTY="$2";       shift 2 ;;
-    --resend) RESEND="true";    shift ;;
-    --*)      die "Unknown option: $1" ;;
-    *)        COMMIT_MSG="$1"; shift ;;
+    --output)  OUTPUT_MODE="$2"; shift 2 ;;
+    --mode)    MODE="$2";        shift 2 ;;
+    --party)   PARTY="$2";       shift 2 ;;
+    --resend)  RESEND="true";    shift ;;
+    --rebuild) REBUILD="true";   shift ;;
+    --*)       die "Unknown option: $1" ;;
+    *)         COMMIT_MSG="$1"; shift ;;
   esac
 done
 
 [[ -n "$PARTY" ]] || die "Specify a party name with --party\n  Example: $0 --party acme \"sync: 2024-Q1\""
+[[ "$RESEND" == "true" && "$REBUILD" == "true" ]] && die "--resend and --rebuild are mutually exclusive"
 COMMIT_MSG="${COMMIT_MSG:-"sync: $(date +%Y-%m-%d)"}"
 
 case "$OUTPUT_MODE" in
@@ -90,6 +96,7 @@ log "Party         : $PARTY"
 log "Output mode   : $OUTPUT_MODE"
 log "Apply mode    : $MODE"
 log "Commit message: $COMMIT_MSG"
+[[ "$REBUILD" == "true" ]] && log "Mode          : REBUILD (existing party tags will be deleted)"
 
 # ── Helpers ────────────────────────────────────────────────────
 
@@ -388,6 +395,35 @@ git rev-parse --verify "refs/remotes/${INTERNAL_REMOTE}/${PUBLISH_BRANCH}" >/dev
          "  ./scripts/init-replica.sh <start-tag>"
 
 PUBLISH_HEAD=$(git rev-parse "${INTERNAL_REMOTE}/${PUBLISH_BRANCH}")
+
+# ── --rebuild: delete existing sync tags for this party ──────────────
+if [[ "$REBUILD" == "true" ]]; then
+  PARTY_TAGS=()
+  while IFS= read -r t; do
+    [[ -n "$t" ]] && PARTY_TAGS+=("$t")
+  done < <(git tag -l "replica/${PARTY}/*" | sort)
+
+  if [[ ${#PARTY_TAGS[@]} -eq 0 ]]; then
+    log "--rebuild: no existing tags found for party '${PARTY}'; proceeding as first delivery"
+  else
+    echo ""
+    log "--rebuild: the following tags for party '${PARTY}' will be deleted:"
+    for t in "${PARTY_TAGS[@]}"; do
+      echo "    ${t}"
+    done
+    echo ""
+    read -r -p "  Proceed with tag deletion? [y/N] " _ans
+    [[ "$_ans" =~ ^[Yy]$ ]] || { log "Aborted."; exit 0; }
+    echo ""
+    for t in "${PARTY_TAGS[@]}"; do
+      git tag -d "$t"
+      git push "$INTERNAL_REMOTE" ":refs/tags/${t}" \
+        || log "Warning: remote tag ${t} not found on remote (skipped)"
+      ok "Deleted: ${t}"
+    done
+    echo ""
+  fi
+fi
 
 # Determine delivery base: last-sync tag (subsequent) or publish root (first)
 FIRST_DELIVERY=false
