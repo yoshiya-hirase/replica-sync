@@ -170,13 +170,16 @@ Each run adds:
 #### Step 6: Run stage-publish.sh
 
 ```bash
-./scripts/stage-publish.sh "sync: v2"
+./scripts/stage-publish.sh --tag milestone/v2 "sync: v2"
 ```
+
+`--tag milestone/v2` pins the diff upper bound to the tagged commit, preventing any
+commits pushed after the tag from slipping into the PR.
 
 **Verification points:**
 - A PR is created on GHE: `sync/TIMESTAMP → publish`
 - `internal-only/` changes are not included in the PR diff
-- The PR body lists internal commits
+- The PR body lists internal commits and shows the `milestone/v2` tag
 
 #### Step 7 (manual): Review and merge PR
 
