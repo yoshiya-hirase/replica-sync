@@ -10,6 +10,9 @@ INTERNAL_REPO="/path/to/internal-monorepo"
 # Remote name on GHE
 INTERNAL_REMOTE="origin"
 
+# Primary development branch (main, dev, master, etc.)
+INTERNAL_BRANCH="main"
+
 # GHE hostname (used as GH_HOST for the gh CLI)
 GH_HOST="github.your-company.com"
 

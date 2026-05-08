@@ -24,6 +24,7 @@ source "$CONFIG_FILE"
 
 # Defaults for optional config values (prevents -u errors when unset)
 declare -p EXCLUDE_PATHS >/dev/null 2>&1 || EXCLUDE_PATHS=()
+: "${INTERNAL_BRANCH:=main}"
 
 log() { echo -e "\033[1;34m[stage]\033[0m $*"; }
 ok()  { echo -e "\033[1;32m[  ok  ]\033[0m $*"; }
@@ -63,7 +64,7 @@ build_exclude_args
 
 # Fetch to ensure publish branch reflects latest remote state (e.g. after PR merge)
 git fetch "$INTERNAL_REMOTE"
-git merge --ff-only "${INTERNAL_REMOTE}/main"
+git merge --ff-only "${INTERNAL_REMOTE}/${INTERNAL_BRANCH}"
 
 git rev-parse --verify "refs/remotes/${INTERNAL_REMOTE}/${PUBLISH_BRANCH}" >/dev/null 2>&1 \
   || die "Publish branch '$PUBLISH_BRANCH' not found on remote.\n" \
