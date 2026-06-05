@@ -1633,3 +1633,80 @@ history and will remain there until explicitly removed with a cleanup commit.
 > re-initialized on GitHub), use the `--rebuild` flag instead of the normal flow.
 > See [B-5. Delivery Method Selection Guide](#b-5-delivery-method-selection-guide) and
 > the `--rebuild` option in [scripts.md](scripts.md).
+
+---
+
+### `stage-publish.sh` exits silently — no PR created, no error message
+
+**Symptom**: `stage-publish.sh` runs to completion with no error message, but no sync
+branch is pushed to GHE and no PR is created.  The last visible line of output is
+`[stage] Applying patch...`.
+
+**Why this happens**: When there are more than 50 commits in the sync range, the old
+`git log ... | head -50` pipeline caused a SIGPIPE: `head` exits after reading 50 lines,
+which sends SIGPIPE to `git log`, causing the pipeline to return non-zero.  With
+`set -o pipefail` active, this non-zero status caused `bash` to abort the script silently
+(no message is printed because the failure is at the shell level, not from the script's
+own error-handling code).
+
+**Fix (already applied in `scripts/stage-publish.sh`)**: The `| head -50` pipe was
+replaced with a `-50` flag passed directly to `git log`, so the process never spawns
+`head` and SIGPIPE cannot occur.
+
+**If you hit this on an older copy of the script**, apply the fix manually:
+
+```diff
+-    git log --oneline --no-merges "${PUBLISH_HEAD}..${INTERNAL_HEAD}" \
+-      -- . ${EXCLUDE_ARGS[@]+"${EXCLUDE_ARGS[@]}"} | head -50
++    git log --oneline --no-merges -50 "${PUBLISH_HEAD}..${INTERNAL_HEAD}" \
++      -- . ${EXCLUDE_ARGS[@]+"${EXCLUDE_ARGS[@]}"}
+```
+
+(The same change applies to both the commit-summary block and the PR-body block.)
+
+---
+
+### `stage-publish.sh` fails with "Not possible to fast-forward"
+
+**Symptom**:
+
+```
+fatal: Not possible to fast-forward, aborting.
+```
+
+The script aborts immediately after printing the four `[stage]` header lines.
+
+**Why this happens**: The script does `git merge --ff-only origin/<INTERNAL_BRANCH>` to
+ensure the local branch is up to date before computing the diff.  This fails when the
+local branch has diverged from the remote — the most common causes are:
+
+- `INTERNAL_REPO` in `sync.conf` points to a stale local clone (e.g. an old `.new` copy
+  instead of the actively-used working directory).
+- The remote branch was force-pushed and the local branch has commits that are no longer
+  in the remote history.
+
+**Diagnosis**:
+
+```bash
+cd "$INTERNAL_REPO"
+git fetch origin
+git status          # look for "have diverged" or "behind"
+git log --oneline -5
+git log --oneline origin/<INTERNAL_BRANCH> -5
+```
+
+**Fix**:
+
+1. **Wrong `INTERNAL_REPO` path** — update `INTERNAL_REPO` in `config/sync.conf` to
+   point to the correct working directory, then re-run the script.
+
+2. **Local branch diverged from remote** (remote was force-pushed, or local has stray
+   commits) — reset after confirming there is nothing to keep:
+
+   ```bash
+   cd "$INTERNAL_REPO"
+   git fetch origin
+   git reset --hard origin/<INTERNAL_BRANCH>
+   ```
+
+   Then re-run `stage-publish.sh`.
