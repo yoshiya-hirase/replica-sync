@@ -1676,16 +1676,25 @@ fatal: Not possible to fast-forward, aborting.
 
 The script aborts immediately after printing the four `[stage]` header lines.
 
-**Why this happens**: The script does `git merge --ff-only origin/<INTERNAL_BRANCH>` to
-ensure the local branch is up to date before computing the diff.  This fails when the
-local branch has diverged from the remote — the most common causes are:
+**Why this happens**: When called **without `--tag`**, the script runs
+`git merge --ff-only origin/<INTERNAL_BRANCH>` to ensure the local branch is up to date
+before using `HEAD` as the diff upper bound.  This fails when the local branch has
+diverged from the remote — the most common causes are:
 
 - `INTERNAL_REPO` in `sync.conf` points to a stale local clone (e.g. an old `.new` copy
   instead of the actively-used working directory).
 - The remote branch was force-pushed and the local branch has commits that are no longer
   in the remote history.
+- A teammate pushed new commits to the remote branch between the `git fetch` and the
+  `git merge` (this can happen when the remote advances while the script is running).
 
-**Diagnosis**:
+> **Note (fix already applied)**: When `--tag` is given, `INTERNAL_HEAD` is resolved
+> from the tag rather than `HEAD`, so the local branch state has no effect on the diff
+> range.  The script now **skips** the `git merge --ff-only` entirely for the `--tag`
+> case.  If you hit this error, always prefer passing `--tag <milestone-tag>` for
+> milestone syncs.
+
+**Diagnosis** (no-tag case):
 
 ```bash
 cd "$INTERNAL_REPO"
@@ -1697,10 +1706,18 @@ git log --oneline origin/<INTERNAL_BRANCH> -5
 
 **Fix**:
 
-1. **Wrong `INTERNAL_REPO` path** — update `INTERNAL_REPO` in `config/sync.conf` to
+1. **Prefer `--tag`** — if you have a milestone tag, use it:
+
+   ```bash
+   ./scripts/stage-publish.sh --tag <milestone-tag> "<message>"
+   ```
+
+   This bypasses the ff-only check entirely.
+
+2. **Wrong `INTERNAL_REPO` path** — update `INTERNAL_REPO` in `config/sync.conf` to
    point to the correct working directory, then re-run the script.
 
-2. **Local branch diverged from remote** (remote was force-pushed, or local has stray
+3. **Local branch diverged from remote** (remote was force-pushed, or local has stray
    commits) — reset after confirming there is nothing to keep:
 
    ```bash
