@@ -71,7 +71,14 @@ build_exclude_args
 
 # Fetch to ensure publish branch reflects latest remote state (e.g. after PR merge)
 git fetch "$INTERNAL_REMOTE"
-git merge --ff-only "${INTERNAL_REMOTE}/${INTERNAL_BRANCH}"
+
+# When --tag is given, INTERNAL_HEAD is resolved from the tag (not HEAD), so the
+# local branch state does not affect the diff. Skip ff-only in that case.
+if [[ -z "$SYNC_TAG" ]]; then
+  git merge --ff-only "${INTERNAL_REMOTE}/${INTERNAL_BRANCH}" \
+    || die "Local '${INTERNAL_BRANCH}' has diverged from '${INTERNAL_REMOTE}/${INTERNAL_BRANCH}'." \
+           "Fix: git -C '${INTERNAL_REPO}' reset --hard '${INTERNAL_REMOTE}/${INTERNAL_BRANCH}'"
+fi
 
 git rev-parse --verify "refs/remotes/${INTERNAL_REMOTE}/${PUBLISH_BRANCH}" >/dev/null 2>&1 \
   || die "Publish branch '$PUBLISH_BRANCH' not found on remote.\n" \
