@@ -1635,6 +1635,85 @@ git show replica/<party>/last-sync | head -3   # previous delivery position exis
 
 ---
 
+## Filesystem Case-Sensitivity (Operational Assumption)
+
+The sync tooling applies patches into a working tree. On a **case-insensitive**
+filesystem, a patch that carries a **case-only rename** (`Foo/` → `foo/`, or two paths
+that differ only in case) **cannot be applied** — the filesystem cannot hold both casings
+at once. This is a silent assumption that is easy to miss, so it is documented here in one
+place.
+
+### Which filesystems are case-sensitive?
+
+| Platform / filesystem | Default | Notes |
+|---|---|---|
+| **macOS** (APFS, and older HFS+) | **case-INsensitive**, case-preserving | The default for the boot/home volume. `ls`/Finder show the exact case you typed (case-preserving), which makes it *look* case-sensitive, but `MyFile` and `myfile` are the same file. Apple discourages case-sensitive boot volumes for app compatibility. |
+| **Linux** (ext4, xfs, btrfs, …) | case-sensitive | This is why the Linux CI runners are unaffected. |
+| **Windows** (NTFS) | case-insensitive, case-preserving | Same class as macOS. |
+
+Check any directory:
+
+```bash
+# git's own assumption
+git config core.ignorecase          # true → git treats the FS as case-insensitive
+
+# functional proof (run inside the directory in question)
+d=$(mktemp -d); ( cd "$d"; : > Aa; : > aA; ls | wc -l )   # 1 = case-insensitive, 2 = case-sensitive
+
+# a specific volume's personality (macOS)
+diskutil info /Volumes/<name> | grep -i Personality        # "APFS (Case-sensitive)" when sensitive
+```
+
+### Where case-sensitivity actually matters
+
+Only the step that **checks out files and applies a patch** is affected — and only when the
+diff contains a case-only rename. Pure `git diff` / object operations are always safe.
+
+| Operation | Applies to a working tree? | Needs a case-sensitive FS? |
+|---|---|---|
+| `stage-publish.sh` | Yes — a temporary **worktree** (`git apply --3way`) | Only the **worktree**. Point it at a case-sensitive volume via `STAGE_TMPDIR`; the internal repo itself can stay on the normal volume. The built-in guard aborts early if a collision is detected on a case-insensitive FS. |
+| `deliver-to-replica.sh` **patch mode** (default) | No — only `git diff … > patch.zip` | **No.** Nothing is checked out on your machine. |
+| `deliver-to-replica.sh` **push mode** | Yes — applies to `REPLICA_REPO` | The **replica clone** must be on a case-sensitive FS (when a case-only rename is present). |
+| `sync-<ts>-apply.sh` (run by the 3rd party) | Yes — applies to the replica working tree | The **replica clone** must be on a case-sensitive FS (when a case-only rename is present). |
+| `init-replica.sh` | Single-snapshot extract | Normally no — a single tree has one casing per path. |
+
+**You do NOT need to place your whole internal repo or the replica repo on a case-sensitive
+volume.** Only the *apply location* matters, and only for diffs that carry a case-only
+rename. Moving a live monorepo onto a case-sensitive volume can break build tools and
+dependencies that assume case-insensitivity — avoid it.
+
+### Recommended setup (macOS)
+
+1. Keep your main repos on the normal (case-insensitive) volume.
+2. Create one small **case-sensitive APFS volume** once, and make it your worktree base:
+
+   ```bash
+   diskutil apfs addVolume disk3 "Case-sensitive APFS" CaseSync   # → /Volumes/CaseSync
+   ```
+
+   Then persist `export STAGE_TMPDIR=/Volumes/CaseSync/tmp` in your shell profile. It is
+   harmless when there is no collision (the worktree just lives there).
+3. Prefer **patch mode** for delivery — your machine then does no checkout/apply at all.
+4. When you must apply to a replica (push mode, or applying yourself), use a clone on the
+   case-sensitive volume and dry-run first: `git apply --check --whitespace=nowarn <patch>`.
+5. Tell 3rd parties to apply on a case-sensitive FS (or Linux) **for any sync that contains a
+   case-only rename**.
+
+### Root-cause fix (removes the requirement entirely)
+
+The requirement only exists because a diff carries a case-only rename. Keep casing
+consistent in the internal repo:
+
+- Avoid renames that change only case. When unavoidable, do a **two-step** rename so both
+  casings never appear in one diff: `Foo` → `Foo_tmp` (commit) → `foo` (commit).
+- After one clean sync, `publish` converges to a single casing and subsequent diffs no
+  longer carry the collision — until the next case-only rename.
+
+See also: Troubleshooting → "patch does not apply on macOS", and the Incident History
+entries for 2026-07-19 (case-only rename) and 2026-07-20 (IDE config base mismatch).
+
+---
+
 ## Troubleshooting
 
 ### Removing a file from the publish branch
