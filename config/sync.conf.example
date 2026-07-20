@@ -66,6 +66,16 @@ EXCLUDE_PATHS=(
   "services/internal-only/"
   ".internal/"
   "scripts/internal/"
+
+  # IDE / editor settings — should never be synced to external replicas.
+  # These are glob patterns (they contain '*'), so '**' matches across
+  # directories and excludes the folder anywhere in a monorepo, not just at root.
+  # NOTE: EXCLUDE_PATHS only stops *future* changes from entering the diff. If
+  # such a file was already committed to the publish branch, also remove it with
+  # a cleanup PR — see docs/operations.md "Removing a file from the publish branch".
+  "**/.idea/**"
+  "**/*.iml"
+  "**/.vscode/**"
 )
 
 # ── Patch mode settings ───────────────────────────────────────

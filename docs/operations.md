@@ -1914,3 +1914,50 @@ case-sensitive filesystem.
 
 **Longer-term**: normalize the case-only naming in the internal repo so `publish` converges
 to a single casing; after one clean sync the collision disappears from subsequent diffs.
+
+### 2026-07-20 — delivery patch fails with "No such file or directory" (IDE config tracked in publish)
+
+**Log symptoms** (during `git apply --check` of a delivery patch on the replica, on a
+case-sensitive filesystem so the case-only-rename issue was already ruled out):
+
+```
+error: services/rule-engine/.idea/vcs.xml: No such file or directory
+```
+
+**Investigation**:
+
+- The patch entry for the file was a **modification** (`--- a/...` and `+++ b/...`, no
+  `new file`/`deleted file` line) → the `publish` branch tracks `.idea/vcs.xml` at both the
+  base and the head of the delivery range.
+- `git ls-files | grep 'rule-engine/.idea'` on the replica returned **nothing** → the
+  replica does not have the file at all.
+- It was the **only** `.idea` path in the patch and the **only** remaining `--check` error,
+  so everything else applied cleanly.
+
+**Root cause**: `services/rule-engine/.idea/vcs.xml` (JetBrains IDE config) is tracked in the
+`publish` branch but absent from the replica — a **per-file base divergence**. The
+underlying mistake is that an IDE settings file was carried into `publish` at all; it should
+have been excluded from the sync. An incremental patch that modifies (or deletes) a file the
+replica lacks cannot apply.
+
+**Why an incremental re-deliver alone does not fix it**: If you remove `.idea/` from
+`publish` and re-deliver incrementally, the new diff then contains a **deletion** of
+`.idea/vcs.xml`, which also fails on the replica (deleting a file it does not have). The
+per-file base divergence has to be escaped, not patched around.
+
+**Resolution**:
+
+1. Exclude IDE settings going forward — add glob patterns to `EXCLUDE_PATHS` in `sync.conf`:
+   `**/.idea/**`, `**/*.iml`, `**/.vscode/**`.
+   (`build_exclude_args` applies `:(exclude,glob)` magic to wildcard patterns so `**`
+   matches across directories; plain paths keep the simple `:!` exclude.)
+2. Remove the already-committed `.idea/` from the `publish` branch with a cleanup PR — see
+   "Removing a file from the publish branch" above.
+3. Re-deliver to the party with **`--rebuild`** (full clean snapshot via `git archive`),
+   which resets the replica to an exact copy of the cleaned `publish` tree and sidesteps the
+   per-file base divergence entirely.
+
+**Prevention**: `config/sync.conf.example` now ships with the IDE exclusion patterns in
+`EXCLUDE_PATHS`. When onboarding a new monorepo, confirm IDE/editor artifacts
+(`.idea/`, `.vscode/`, `*.iml`) are excluded before the first `init-replica.sh`, so they
+never enter `publish`.

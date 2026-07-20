@@ -54,7 +54,15 @@ done
 build_exclude_args() {
   EXCLUDE_ARGS=()
   for path in ${EXCLUDE_PATHS[@]+"${EXCLUDE_PATHS[@]}"}; do
-    EXCLUDE_ARGS+=(":!${path}")
+    # A pattern with a wildcard needs the 'glob' pathspec magic so that '**'
+    # matches across directory boundaries (e.g. '**/.idea/**' excludes every
+    # .idea directory anywhere in the tree). Plain paths keep the simple
+    # exclude magic for backward compatibility.
+    if [[ "$path" == *'*'* ]]; then
+      EXCLUDE_ARGS+=(":(exclude,glob)${path}")
+    else
+      EXCLUDE_ARGS+=(":!${path}")
+    fi
   done
 }
 
