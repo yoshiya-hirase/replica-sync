@@ -1573,6 +1573,56 @@ Adding the Bot account to the Ruleset's `Bypass list` allows
 - [ ] For `--output push --mode pr`: 3rd party reviews and merges sync PR
 - [ ] For `--output push --mode direct`: complete on push
 
+### Pre-flight Verification (before running `stage-publish.sh` / `deliver-to-replica.sh`)
+
+Both scripts `cd` into `INTERNAL_REPO` and read the publish branch from the
+**remote-tracking ref** `origin/publish` (each script runs its own `git fetch` first),
+**not** from your working tree or local `publish` branch. Confirming a few things up front
+prevents the most common failure modes: wrong diff boundary, full re-send, and applying on
+the wrong filesystem.
+
+**Where to run**
+
+| Script | Reads | Which clone to run in |
+|---|---|---|
+| `stage-publish.sh` | lower bound `origin/publish`; upper bound = your local branch (or `--tag`) | Any clone whose `origin` is GHE and whose branch/tag is the snapshot to ship. On macOS with case-only renames, point the worktree at a case-sensitive volume via `STAGE_TMPDIR` (see Troubleshooting / Incident History). |
+| `deliver-to-replica.sh` | base = local tag `replica/<party>/last-sync`; target = `origin/publish` | The **persistent clone that holds the party's `replica/<party>/last-sync` tag**. These tags are **local-only (never pushed)**, so a subsequent delivery run in a different/throwaway clone would be treated as a first delivery and re-send the full snapshot. |
+
+**Before Phase 1 — `stage-publish.sh`**
+
+```bash
+cd "$INTERNAL_REPO"
+git checkout <internal-branch>                 # e.g. dev
+git fetch origin
+git pull --ff-only origin <internal-branch>    # advance the branch you will tag (upper bound)
+git rev-parse origin/publish                    # lower bound exists
+git log --oneline -3                            # HEAD is the snapshot you intend to publish
+```
+
+- [ ] On the branch/tag representing the snapshot to publish, and it is up to date
+- [ ] `origin/publish` is present after fetch (diff lower bound)
+- [ ] Passing `--tag <milestone>` to pin the upper bound (recommended)
+- [ ] macOS + case-only renames only: `export STAGE_TMPDIR=<case-sensitive volume>`
+
+**Before Phase 2 — `deliver-to-replica.sh`**
+
+```bash
+cd "$INTERNAL_REPO"                             # the persistent delivery clone
+git fetch origin
+git log --oneline origin/publish -3            # the merged milestone snapshot is present
+git show replica/<party>/last-sync | head -3   # previous delivery position exists (subsequent delivery)
+```
+
+- [ ] The Phase 1 PR (`sync/... → publish`) is **merged on GHE** (otherwise `origin/publish` lacks the snapshot)
+- [ ] Running in the clone that owns `replica/<party>/last-sync` (tags are local-only)
+- [ ] `origin/publish` includes the new snapshot after fetch
+- [ ] Mode chosen: `patch` (no local checkout/apply → no case-sensitivity issue on your machine) vs `push` (applies to `REPLICA_REPO`; needs a case-sensitive FS if the diff has case-only renames)
+
+> **`git pull` is not required** in either phase. Each script runs its own `git fetch` and
+> uses `origin/publish` (a remote-tracking ref), so the local working tree / local `publish`
+> branch state does not affect the result. What matters is that `git fetch` can reach the
+> remote and that the required tags exist **locally** in `INTERNAL_REPO`.
+
 ### External PR Incorporation
 
 - [ ] Download Artifact (patch + meta) from the PR on github.com
@@ -1791,3 +1841,76 @@ milestone-tag push there is not affected by this issue.
 **Longer-term**: Consider cleaning up the case-only naming inconsistency in the internal
 repository so the `publish` branch converges to a single casing; after one clean sync the
 collision no longer appears in subsequent diffs.
+
+---
+
+## Incident History
+
+A dated record of real incidents: the symptoms seen in the logs, the root cause, and how
+it was resolved. Kept for pattern-matching if a similar symptom appears again, even when
+the tooling has since been hardened against it.
+
+### 2026-07-19 — `stage-publish.sh` "patch does not apply" (case-only rename on a case-insensitive filesystem)
+
+**Log symptoms** (during `[stage] Applying patch...`):
+
+```
+Applied patch to '.../pageNavigationHeader/PageNavigationHeader.cy.tsx' cleanly.
+error: web/.../PageNavigationHeader/PageNavigationHeader.stories.tsx: patch does not apply
+Performing three-way merge...
+Applied patch to '.../pageNavigationHeader/PageNavigationHeader.tsx' cleanly.
+error: web/.../pageNavigationHeader/__mock.ts: does not exist in index
+error: cannot read the current contents of '.../pageNavigationHeader/__mock.ts'
+error: web/.../pageNavigationHeader/__mock.ts: patch does not apply
+...
+Patch file kept for inspection: /var/folders/.../T/tmp.XXXX/stage-publish-TIMESTAMP.patch
+[ err  ] Patch apply failed. Review the errors above.
+```
+
+Tell-tale sign: **the same directory appears under two casings** (`PageNavigationHeader`
+and `pageNavigationHeader`). The many `Falling back to direct application...` lines are
+benign (normal for newly-added files) and are not the cause.
+
+**Root cause chain**:
+
+1. The internal history contained a **case-only rename** of a directory
+   (`PageNavigationHeader/` → `pageNavigationHeader/`).
+2. `git diff origin/publish..<tag>` therefore referenced **both** casings.
+3. The patch is applied inside a worktree created by `mktemp -d`. On macOS, `mktemp -d`
+   **ignores `$TMPDIR`** and uses the per-user `/var/folders/.../T`, which lives on the
+   **case-insensitive** Data volume.
+4. A case-insensitive filesystem cannot hold `PageNavigationHeader/` and
+   `pageNavigationHeader/` simultaneously, so `git apply` could not reconcile them.
+
+**What did NOT work**:
+
+- `export TMPDIR=<case-sensitive path>` — macOS `mktemp -d` ignores it; the worktree still
+  landed in `/var/folders` (confirmed by the `Patch file kept for inspection:` path).
+- Cloning the repo onto a case-sensitive volume **alone** — the worktree temp dir is chosen
+  independently of the repo's location.
+
+**Resolution (operational)**:
+
+1. Created a case-sensitive APFS volume (`diskutil apfs addVolume ... "Case-sensitive APFS" CaseSync`).
+2. Pointed the worktree at it: `export STAGE_TMPDIR=/Volumes/CaseSync/tmp`.
+3. Re-ran `stage-publish.sh --tag <milestone> "<message>"`; the patch applied cleanly and
+   the GHE PR was created.
+
+**Fix landed in the tooling** (so it should not recur):
+
+- `stage-publish.sh` now passes an explicit `mktemp` template and honors a `STAGE_TMPDIR`
+  override, so the worktree can be placed on a case-sensitive volume.
+- It probes the worktree filesystem and, on a case-insensitive FS, scans the patch for
+  case-only collisions at every path component; if found, it **aborts up front** with the
+  colliding paths and `STAGE_TMPDIR` guidance instead of the confusing `git apply` failure.
+- Documented in Troubleshooting → "patch does not apply on macOS" and `docs/scripts.md`
+  (`STAGE_TMPDIR`).
+
+**Phase 2 relevance**: In `patch` mode `deliver-to-replica.sh` does not check out files, so
+the operator's machine is unaffected — but the generated patch still contains the case-only
+rename, so a 3rd party applying it on macOS may hit the same symptom (apply on a
+case-sensitive volume or Linux). `push` mode applies to `REPLICA_REPO` locally and needs a
+case-sensitive filesystem.
+
+**Longer-term**: normalize the case-only naming in the internal repo so `publish` converges
+to a single casing; after one clean sync the collision disappears from subsequent diffs.
