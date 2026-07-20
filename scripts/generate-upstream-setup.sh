@@ -673,6 +673,30 @@ delivery for four reasons:
 Note: the delivered diff is always complete (\`<publish>..<upper-bound>\`). Only
 the commit list shown in the generated PR body is capped (at 50 entries) — that
 is a display limit, not a truncation of the delivered changes.
+
+### Q3. \`stage-publish.sh\` fails with "patch does not apply" on macOS.
+
+If the failing paths show the **same directory under two casings** (e.g.
+\`PageNavigationHeader/\` and \`pageNavigationHeader/\`), the internal history
+contains a **case-only rename** and you are running on a **case-insensitive**
+filesystem (macOS default). The patch is applied in a temporary worktree, and a
+case-insensitive filesystem cannot hold both casings at once.
+
+Fix: apply the patch on a case-sensitive volume via the \`STAGE_TMPDIR\` variable:
+
+\`\`\`bash
+# One-time: create a case-sensitive APFS volume (macOS)
+diskutil apfs addVolume disk3 "Case-sensitive APFS" CaseSync
+diskutil info /Volumes/CaseSync | grep -i Personality   # expect "APFS (Case-sensitive)"
+
+# Point the worktree at it and re-run
+export STAGE_TMPDIR=/Volumes/CaseSync/tmp
+./replica-sync/scripts/stage-publish.sh --tag <milestone-tag> "<message>"
+\`\`\`
+
+\`export TMPDIR=...\` does **not** work: macOS \`mktemp -d\` ignores \`\$TMPDIR\`.
+Use \`STAGE_TMPDIR\`. The script detects this collision up front and aborts with
+these instructions. Alternatively, run Phase 1 via the Linux CI (case-sensitive).
 SETUPEOF
 
 log "Built SETUP.md"

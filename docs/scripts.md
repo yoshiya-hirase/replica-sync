@@ -246,6 +246,16 @@ After the PR is reviewed and merged, run `deliver-to-replica.sh` to push to exte
 ./scripts/stage-publish.sh   # uses today's date as message
 ```
 
+**Environment variables:**
+
+| Variable | Description |
+|---|---|
+| `STAGE_TMPDIR` | Base directory for the temporary worktree where the patch is applied. Defaults to `$TMPDIR`, then `/tmp`. Set this to a directory on a **case-sensitive** volume when the diff contains a case-only rename (e.g. `Foo/` → `foo/`) and you are on macOS. On macOS `mktemp -d` ignores `$TMPDIR`, so `STAGE_TMPDIR` is the supported override. See [operations.md — "patch does not apply" on macOS](operations.md#stage-publishsh-fails-with-patch-does-not-apply-on-macos-case-only-renames). |
+
+The script also guards against case-only path collisions: on a case-insensitive
+filesystem it detects them in the patch and aborts early with the colliding paths and
+`STAGE_TMPDIR` guidance, instead of failing later inside `git apply`.
+
 ---
 
 ## deliver-to-replica.sh

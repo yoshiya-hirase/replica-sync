@@ -1727,3 +1727,67 @@ git log --oneline origin/<INTERNAL_BRANCH> -5
    ```
 
    Then re-run `stage-publish.sh`.
+
+---
+
+### `stage-publish.sh` fails with "patch does not apply" on macOS (case-only renames)
+
+**Symptom**: `stage-publish.sh` reaches `[stage] Applying patch...` and then fails with a
+mix of messages like:
+
+```
+error: web/.../PageNavigationHeader/PageNavigationHeader.stories.tsx: patch does not apply
+error: web/.../pageNavigationHeader/__mock.ts: does not exist in index
+[ err  ] Patch apply failed. Review the errors above.
+```
+
+Note the same directory appearing under **two different casings** (`PageNavigationHeader`
+vs `pageNavigationHeader`).
+
+**Why this happens**: The internal history contains a **case-only rename** of a directory
+or file (`Foo/` → `foo/`). The generated patch therefore references both casings. The
+patch is applied inside a temporary worktree, and on a **case-insensitive filesystem**
+(macOS default APFS/HFS+) the two casings collide — the filesystem cannot hold both
+`Foo/` and `foo/` at once — so `git apply` cannot reconcile them.
+
+**Important**: `stage-publish.sh` creates its worktree with `mktemp -d`. On macOS,
+`mktemp -d` **ignores `$TMPDIR`** (it uses the per-user `/var/folders/.../T`, which is on
+the case-insensitive Data volume). So `export TMPDIR=...` does **not** move the worktree.
+Use the dedicated `STAGE_TMPDIR` variable instead.
+
+> **Guard (already applied in `scripts/stage-publish.sh`)**: The script now probes the
+> worktree filesystem and scans the patch for case-only collisions. If it detects one on
+> a case-insensitive filesystem, it aborts early with the colliding paths and the
+> `STAGE_TMPDIR` instructions below — instead of the confusing `git apply` failure.
+
+**Fix**:
+
+1. **Create a case-sensitive volume** (one-time, macOS):
+
+   ```bash
+   diskutil apfs addVolume disk3 "Case-sensitive APFS" CaseSync
+   #   → mounts at /Volumes/CaseSync
+   # Verify it really is case-sensitive:
+   diskutil info /Volumes/CaseSync | grep -i Personality   # expect "APFS (Case-sensitive)"
+   ```
+
+   Replace `disk3` with your APFS container from `diskutil list`.
+
+2. **Point the worktree at the case-sensitive volume via `STAGE_TMPDIR` and re-run**:
+
+   ```bash
+   export STAGE_TMPDIR=/Volumes/CaseSync/tmp
+   ./replica-sync/scripts/stage-publish.sh --tag <milestone-tag> "<message>"
+   ```
+
+   `STAGE_TMPDIR` overrides the worktree/patch temp base (the script passes an explicit
+   `mktemp` template so it is honored). The internal repo itself can stay on its normal
+   volume; only the worktree needs to be case-sensitive.
+
+**Alternative**: Run Phase 1 on a case-sensitive filesystem to begin with — the CI
+workflow (`sync-replica.yml`) runs on Linux runners, which are case-sensitive, so a
+milestone-tag push there is not affected by this issue.
+
+**Longer-term**: Consider cleaning up the case-only naming inconsistency in the internal
+repository so the `publish` branch converges to a single casing; after one clean sync the
+collision no longer appears in subsequent diffs.

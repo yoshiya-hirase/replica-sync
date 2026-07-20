@@ -105,7 +105,16 @@ fi
 log "Diff range: ${PUBLISH_HEAD:0:8}..${INTERNAL_HEAD:0:8}"
 
 # ── Step 2: Generate diff patch ───────────────────────────────
-STAGE_TMP_DIR=$(mktemp -d)
+# Worktree/patch temp location. The patch is applied inside a worktree created
+# here; on a case-INSENSITIVE filesystem (e.g. macOS default APFS) a patch that
+# contains case-only renames (Foo/ -> foo/) cannot be applied and git apply
+# fails with "patch does not apply" / "does not exist in index".
+# Set STAGE_TMPDIR to a directory on a case-SENSITIVE volume to work around it.
+# Note: macOS `mktemp -d` ignores $TMPDIR unless an explicit template is given,
+# so we always pass a full template path here.
+STAGE_TMP_BASE="${STAGE_TMPDIR:-${TMPDIR:-/tmp}}"
+mkdir -p "$STAGE_TMP_BASE"
+STAGE_TMP_DIR=$(mktemp -d "${STAGE_TMP_BASE%/}/stage-publish.XXXXXXXX")
 PATCH_FILE="${STAGE_TMP_DIR}/stage-publish-${TIMESTAMP}.patch"
 WORK_DIR="${STAGE_TMP_DIR}/worktree"
 mkdir -p "$WORK_DIR"
@@ -123,6 +132,59 @@ if [[ ! -s "$PATCH_FILE" ]]; then
 fi
 
 log "Patch size: $(wc -l < "$PATCH_FILE") lines"
+
+# ── Guard: case-only path collisions on a case-insensitive filesystem ──
+# A patch that contains a case-only rename (Foo/ -> foo/) cannot be applied
+# inside a worktree on a case-INSENSITIVE filesystem: the two casings collide
+# and git apply fails with a confusing "patch does not apply" /
+# "does not exist in index". Detect it up front and give actionable guidance.
+probe="${STAGE_TMP_DIR}/.case_probe"
+: > "${probe}a" 2>/dev/null || true
+if [[ -e "${probe}A" ]]; then
+  FS_CASE_INSENSITIVE=1
+else
+  FS_CASE_INSENSITIVE=0
+fi
+rm -f "${probe}a" "${probe}A" 2>/dev/null || true
+
+if [[ "$FS_CASE_INSENSITIVE" == "1" ]]; then
+  # Collisions can occur at any path component (a case-only directory rename),
+  # not just the full file path, so compare every cumulative path prefix.
+  CASE_COLLISIONS=$(
+    grep -E '^diff --git ' "$PATCH_FILE" \
+      | sed -E 's|^diff --git a/(.*) b/.*|\1|' \
+      | awk '
+          {
+            n = split($0, parts, "/")
+            prefix = ""
+            for (i = 1; i <= n; i++) {
+              prefix = (i == 1) ? parts[1] : prefix "/" parts[i]
+              lc = tolower(prefix)
+              if (lc in seen) {
+                if (seen[lc] != prefix) {
+                  key = seen[lc] "  <->  " prefix
+                  if (!(key in reported)) { print key; reported[key] = 1 }
+                }
+              } else {
+                seen[lc] = prefix
+              }
+            }
+          }
+        '
+  )
+  if [[ -n "$CASE_COLLISIONS" ]]; then
+    echo "" >&2
+    echo "Case-only path collisions detected in the diff:" >&2
+    echo "$CASE_COLLISIONS" >&2
+    echo "" >&2
+    die "The worktree temp dir ($STAGE_TMP_DIR) is on a CASE-INSENSITIVE filesystem," \
+        "so this patch cannot be applied (the paths above differ only in case).\n" \
+        "Fix: point the worktree at a case-sensitive volume and re-run, e.g.\n" \
+        "  export STAGE_TMPDIR=/Volumes/CaseSensitiveVolume/tmp\n" \
+        "  ./replica-sync/scripts/stage-publish.sh --tag <tag> \"<message>\"\n" \
+        "(macOS 'mktemp -d' ignores \$TMPDIR, so STAGE_TMPDIR is the supported override.)"
+  fi
+fi
 
 # ── Step 3: Create sync branch based on publish ───────────────
 log "Creating temporary worktree..."
