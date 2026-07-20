@@ -189,6 +189,7 @@ jobs:
           GH_TOKEN: ${{ secrets.GHE_TOKEN }}
         run: |
           ./replica-sync/scripts/stage-publish.sh \
+            --tag "${{ github.ref_name }}" \
             "sync: ${{ github.ref_name }}"
 CIEOF
   log "Built .github/workflows/sync-replica.yml"
@@ -467,13 +468,29 @@ Run for every milestone after the first.
 
 ### Phase 1: Stage internal changes to publish branch
 
+**Step 0 — Sync your local checkout first (important).**
+The milestone tag is placed on whatever commit your local branch currently
+points at, and \`stage-publish.sh\` reads the publish branch from the remote
+tracking ref. Update **both** before tagging, so the snapshot reflects the true
+latest internal state and does not re-include already-published changes:
+
 \`\`\`bash
-# Create a milestone tag
+git checkout main                   # the internal integration branch
+git fetch origin                    # refresh the publish tracking ref (diff lower bound)
+git pull --ff-only origin main      # advance local main (diff upper bound); ff-only avoids rewriting history
+\`\`\`
+
+**Step 1 — Tag the milestone and stage with \`--tag\` (recommended).**
+
+\`\`\`bash
+# Create and push a milestone tag on the now up-to-date commit
 git tag -a milestone/2024-Q2 -m "Q2 milestone"
 git push origin milestone/2024-Q2
 
-# Stage changes to publish (creates a GHE PR)
-./replica-sync/scripts/stage-publish.sh "sync: 2024-Q2"
+# Stage changes to publish (creates a GHE PR).
+# Always pass --tag so the diff upper bound is the fixed tagged commit,
+# not your live working HEAD. See "Operational Q&A" (Q2) for why.
+./replica-sync/scripts/stage-publish.sh --tag milestone/2024-Q2 "sync: 2024-Q2"
 \`\`\`
 
 Review and merge the GHE PR (\`sync/TIMESTAMP → publish\`). Verify that:
@@ -593,7 +610,7 @@ fi)
 | Operation | Command |
 |---|---|
 | Initialize publish branch | \`./replica-sync/scripts/init-replica.sh <start-tag>\` |
-| Stage sync to publish | \`./replica-sync/scripts/stage-publish.sh "sync: YYYY-QN"\` |
+| Stage sync to publish | \`./replica-sync/scripts/stage-publish.sh --tag milestone/<id> "sync: YYYY-QN"\` |
 | Deliver to 3rd party | \`./replica-sync/scripts/deliver-to-replica.sh --party <name> "sync: YYYY-QN"\` |
 | Apply external PR | \`./replica-sync/scripts/apply-external-pr.sh --party <name> --patch <file> --meta <file>\` |
 | Partial acceptance | \`./replica-sync/scripts/cherry-pick-partial.sh --patch <file> --meta <file> --paths <paths>\` |
@@ -602,6 +619,60 @@ fi)
 
 All scripts load \`replica-sync/config/sync.conf\` automatically.
 Run all scripts from the **monorepo root**.
+
+---
+
+## Operational Q&A
+
+Real questions from operators, with the reasoning behind the answers.
+
+### Q1. Before Phase 1 tagging, do I need to \`git pull\` first?
+
+**Yes.** \`git tag\` records whatever commit your local branch currently points
+at, and \`stage-publish.sh\` computes the diff as \`<publish-branch>..<upper-bound>\`.
+If your checkout is stale:
+
+- The tag (the **upper bound**) points at an old commit, so the latest internal
+  commits are **silently omitted** from the delivered snapshot.
+- The **lower bound** is read from the remote tracking ref
+  \`<remote>/<publish-branch>\`, so a stale tracking ref can re-include changes
+  that were already published in a previous milestone.
+
+Update both before tagging:
+
+\`\`\`bash
+git checkout main
+git fetch origin                 # refresh the publish tracking ref (lower bound)
+git pull --ff-only origin main   # advance local main (upper bound)
+\`\`\`
+
+Use \`--ff-only\` to avoid accidentally creating merge commits that move the
+milestone point somewhere you did not intend.
+
+### Q2. Why prefer \`--tag\` over the default \`HEAD\` upper bound?
+
+Without \`--tag\`, the diff upper bound is your live local \`HEAD\`; with \`--tag\`
+it is the fixed commit the tag points to. \`--tag\` is safer for milestone
+delivery for four reasons:
+
+1. **Reproducible boundary.** Internal \`main\` keeps moving. A tag freezes the
+   exact commit you decided to ship, so commits landing after that decision
+   (possibly unfinished work) are not pulled in.
+2. **Independent of local state.** In HEAD mode the script enforces
+   \`git merge --ff-only\` against the remote branch: if your local branch has
+   diverged it aborts, and if it is behind it silently fast-forwards — so the
+   boundary depends on your working-tree state. \`--tag\` decouples the diff from
+   local state entirely (the ff-only check is skipped).
+3. **Auditability.** The tag is a permanent marker of "this internal commit was
+   delivered externally," which you can later diff, reproduce, or reference when
+   answering "what did we ship in Q2?".
+4. **Consistency across parties and retries.** Phase 2 delivers to each party,
+   sometimes over several runs or days. A tag is the single source of truth for
+   the boundary; HEAD-based runs at different times drift apart.
+
+Note: the delivered diff is always complete (\`<publish>..<upper-bound>\`). Only
+the commit list shown in the generated PR body is capped (at 50 entries) — that
+is a display limit, not a truncation of the delivered changes.
 SETUPEOF
 
 log "Built SETUP.md"
