@@ -985,6 +985,56 @@ branch locally beforehand. Passing `--tag` avoids both requirements.
 Note: `deliver-to-replica.sh` never reads `INTERNAL_BRANCH` — it works from `origin/publish`
 and the party tags — so Phase 2 is unaffected by any source-branch change.
 
+#### Verifying the stage PR is mergeable (before merging into `publish`)
+
+By construction the sync branch is created **from `origin/publish`** and the patch is applied
+on top of it, so as long as `publish` has not advanced since, the PR merges cleanly (usually
+a fast-forward). To confirm, prefer **GitHub's own merge computation** — it runs server-side
+on Linux (case-sensitive), so it is not affected by the macOS case-only-rename trap.
+
+**Preferred — `gh` CLI (server-side verdict):**
+
+```bash
+# Find the open stage PR if you do not have its number
+gh pr list --repo <ORG>/<internal-repo> --base publish --state open
+
+# Inspect mergeability
+gh pr view <PR-number-or-URL> --repo <ORG>/<internal-repo> \
+  --json number,state,mergeable,mergeStateStatus,baseRefName,headRefName,author,commits
+```
+
+- `mergeable`: `MERGEABLE` = good; `CONFLICTING` = needs resolution; `UNKNOWN` = GitHub is
+  still computing, re-run in a few seconds.
+- `mergeStateStatus`: `CLEAN` = ready; `BEHIND` = `publish` advanced, update the branch;
+  `BLOCKED` = required review/checks pending; `DIRTY` = conflict.
+- Also confirm `baseRefName` is `publish`, `author` is the Bot, and `commits` is a single
+  squash commit.
+
+**Alternative — GitHub UI:** the PR's merge box shows "Able to merge / no conflicts" and lets
+you eyeball the diff (EXCLUDE_PATHS applied, Bot author, one commit).
+
+**Local dry-run — use an in-memory merge, never a checkout-based one:**
+
+```bash
+cd "$INTERNAL_REPO"
+git fetch origin
+
+# (a) Does it fast-forward? (is publish an ancestor of the sync branch?)
+git merge-base --is-ancestor origin/publish origin/sync/<TIMESTAMP> \
+  && echo "FF-mergeable" || echo "publish advanced — needs a real merge"
+
+# (b) Any conflicts, without touching the working tree?
+git merge-tree --write-tree --messages origin/publish origin/sync/<TIMESTAMP>; echo "exit=$?"
+#   exit 0 = clean, 1 = conflicts (conflicting paths listed in the output)
+```
+
+> ⚠ **Do not use a checkout-based dry-run** (`git merge --no-commit …`, or checking out the
+> sync branch) on macOS. If the snapshot contains a case-only rename, expanding the merge into
+> a working tree on a case-insensitive filesystem fails regardless of true mergeability.
+> `git merge-tree --write-tree` merges in memory and writes nothing to the working tree, so it
+> is safe on a case-insensitive filesystem — as is the GitHub-side check above. See
+> [Filesystem Case-Sensitivity](#filesystem-case-sensitivity-operational-assumption).
+
 ### B-3. Phase 2: Deliver to External Replica (`deliver-to-replica.sh`)
 
 Deliver the content of the `publish` branch to the external replica.
