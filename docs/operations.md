@@ -927,6 +927,64 @@ Internal flow:
 Review and approve the PR, then merge to `publish`.
 **This phase does not update the `replica/<party>/last-sync` tag.**
 
+#### Changing the source branch (e.g. syncing a code-freeze snapshot)
+
+The diff `stage-publish.sh` produces is a plain commit-range diff
+(`origin/publish..<upper-bound>`); it does **not** depend on branch identity or on the two
+sides sharing history. So you can change which internal branch (or snapshot) a sync is
+based on — for example, to stop syncing from `dev` and instead sync a **code-frozen
+snapshot** that you keep on its own branch/tag for the record — and delivery continues
+normally.
+
+**What each variable actually controls**
+
+| | Role in `stage-publish.sh` | Effect of the source branch |
+|---|---|---|
+| `origin/publish` | Diff **lower** bound (always) | unchanged |
+| `--tag <tag>` | Diff **upper** bound = the tagged commit | this is what selects the snapshot |
+| `INTERNAL_BRANCH` (`sync.conf`) | Used **only** for the `git merge --ff-only` check, and **only when `--tag` is omitted** | irrelevant when you pass `--tag` |
+
+**Recommended: pin with `--tag`, and you do not need to touch `INTERNAL_BRANCH`.** Because
+`--tag` resolves the upper bound from the tag, `INTERNAL_BRANCH` plays no part in the diff
+and the ff-only check is skipped entirely. The command is identical to a normal milestone
+sync — only the tag's target changes:
+
+```bash
+cd "$INTERNAL_REPO"
+git fetch origin
+
+# Record the code freeze on its own branch + tag
+git checkout -b release/2026-Q3-freeze <freeze-commit>
+git push origin release/2026-Q3-freeze
+git tag -a milestone/2026-Q3 -m "Q3 code freeze" <freeze-commit>
+git push origin milestone/2026-Q3
+
+# Same command/args as before — no sync.conf change needed
+./replica-sync/scripts/stage-publish.sh --tag milestone/2026-Q3 "sync: 2026-Q3"
+```
+
+**Correctness condition — the new source must be a *forward* of `publish`.** The delivered
+diff is `origin/publish..<new-source>`. If the new source contains everything already
+synced (i.e. it builds on top of what is in `publish`), the diff is forward-only and safe.
+If it was branched from a point *before* the last sync, or otherwise omits already-synced
+commits, the diff will contain **reversions** and the replica would regress. Verify before
+staging:
+
+```bash
+git fetch origin
+git log --oneline origin/publish ^<new-source>   # empty output → new source includes all of publish (safe)
+git diff --stat origin/publish..<new-source>      # eyeball the actual delivered change
+```
+
+**If you run without `--tag`** (not recommended for this case): the upper bound becomes the
+`HEAD` of your local checkout, and the ff-only check runs against `origin/<INTERNAL_BRANCH>`
+**without checking that branch out first**. To use branch-based (no-tag) staging on a new
+source branch you must update `INTERNAL_BRANCH` in `sync.conf` *and* `git checkout` that
+branch locally beforehand. Passing `--tag` avoids both requirements.
+
+Note: `deliver-to-replica.sh` never reads `INTERNAL_BRANCH` — it works from `origin/publish`
+and the party tags — so Phase 2 is unaffected by any source-branch change.
+
 ### B-3. Phase 2: Deliver to External Replica (`deliver-to-replica.sh`)
 
 Deliver the content of the `publish` branch to the external replica.
