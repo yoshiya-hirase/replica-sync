@@ -182,27 +182,38 @@ $([ "$first" = "true" ] && echo "| \`sync-${ts}-bootstrap/\` | Bootstrap files a
 
 **Prerequisites:** \`git\`, \`jq\`, and \`gh\` (gh CLI required only for PR mode).
 
-**Step 1 — Extract this package** (if not already done):
+> **How this script locates files.** The apply script finds its sibling
+> \`sync-${ts}.patch\` / \`-meta.json\` relative to **its own location**, while all
+> \`git\` operations run in your **current directory**. These are two different
+> places, so you must \`cd\` into the replica **and** invoke the script **by the
+> path to the extracted package** — do not run it by bare name.
+
+**Step 1 — Extract this package OUTSIDE the replica repository.**
+Keep it out of the replica's working tree so its files are not swept into the
+commit by \`git add -A\`. Note the extracted path.
 
 \`\`\`bash
-unzip sync-${ts}-*.zip
-cd sync-${ts}-*/
+unzip sync-${ts}-*.zip -d ~/sync-packages/      # any location outside the replica
+PKG=~/sync-packages/sync-${ts}-*                 # remember where it landed
 \`\`\`
 
-**Step 2 — Run the apply script** from your local clone of the replica:
+**Step 2 — Run the apply script from the root of the replica clone.**
+\`cd\` into the replica (any branch is fine — the script switches to main
+automatically), and pass the script **by its path in \$PKG**:
 
 \`\`\`bash
-# Run from the root of the replica (any branch is fine — the script switches to main automatically)
 cd /path/to/replica
-bash /path/to/sync-${ts}-apply.sh
+bash \$PKG/sync-${ts}-apply.sh --mode pr      # push a sync branch and open a PR (recommended)
+# bash \$PKG/sync-${ts}-apply.sh --mode direct  # apply directly to main
+# bash \$PKG/sync-${ts}-apply.sh                # use the package default (${default_mode})
 \`\`\`
 
-Or specify the mode explicitly:
-
-\`\`\`bash
-bash sync-${ts}-apply.sh --mode pr      # push sync branch and open a PR (recommended)
-bash sync-${ts}-apply.sh --mode direct  # apply directly to main
-\`\`\`
+> **Before running**, confirm the replica clone is the right one and clean:
+> \`git remote -v\` (origin is the github.com replica) and \`git status\` (no local
+> changes). On macOS, if this sync contains a case-only rename the apply will
+> fail on a case-insensitive volume — put the replica clone on a **case-sensitive**
+> filesystem (or Linux) and dry-run first:
+> \`git checkout main && git fetch origin && git reset --hard origin/main && git apply --check --whitespace=nowarn \$PKG/sync-${ts}.patch\`
 
 **Step 3 — Review and merge** (PR mode only):
 
