@@ -1023,13 +1023,27 @@ git push origin milestone/2026-Q3
 diff is `origin/publish..<new-source>`. If the new source contains everything already
 synced (i.e. it builds on top of what is in `publish`), the diff is forward-only and safe.
 If it was branched from a point *before* the last sync, or otherwise omits already-synced
-commits, the diff will contain **reversions** and the replica would regress. Verify before
-staging:
+commits, the diff will contain **reversions** and the replica would regress.
+
+`publish` has its **own history**: it starts from an empty base commit and grows by Bot
+squash commits, and internal branches never merge it. So an ancestry check against
+`origin/publish` (e.g. `git log origin/publish ^<new-source>`) always lists every `publish`
+commit and cannot answer this. Check against the **internal** tag used for the previous
+stage instead, and look at the actual content diff:
 
 ```bash
-git fetch origin
-git log --oneline origin/publish ^<new-source>   # empty output → new source includes all of publish (safe)
-git diff --stat origin/publish..<new-source>      # eyeball the actual delivered change
+git fetch origin --tags
+
+# 1. History: does the new source contain the previous stage's source?
+#    (find the previous tag with `git tag --sort=-creatordate`, or in the last sync PR body
+#    / `git show -s origin/publish`)
+git merge-base --is-ancestor <previous-stage-tag> <new-source> \
+  && echo "OK: includes everything previously staged" \
+  || git log --oneline <new-source>..<previous-stage-tag>   # commits that would be reverted
+
+# 2. Content: the diff stage-publish will actually build (EXCLUDE_PATHS removed at stage time)
+git diff --stat origin/publish <new-source>
+git diff --name-only --diff-filter=D origin/publish <new-source>   # deletions: check none are regressions
 ```
 
 **If you run without `--tag`** (not recommended for this case): the upper bound becomes the
