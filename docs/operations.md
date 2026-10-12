@@ -1818,6 +1818,22 @@ the wrong filesystem.
 | `stage-publish.sh` | lower bound `origin/publish`; upper bound = your local branch (or `--tag`) | Any clone whose `origin` is GHE and whose branch/tag is the snapshot to ship. On macOS with case-only renames, point the worktree at a case-sensitive volume via `STAGE_TMPDIR` (see Troubleshooting / Incident History). |
 | `deliver-to-replica.sh` | base = local tag `replica/<party>/last-sync`; target = `origin/publish` | The **persistent clone that holds the party's `replica/<party>/last-sync` tag**. These tags are **local-only (never pushed)**, so a subsequent delivery run in a different/throwaway clone would be treated as a first delivery and re-send the full snapshot. |
 
+**Run from your usual working directory, not a separate `git worktree`.** A worktree you
+create for this (e.g. `wt-a`) does not work as-is:
+
+| In a new worktree | Effect |
+|---|---|
+| `replica-sync/config/sync.conf` and `config/party/*.conf` are absent (gitignored; a worktree only gets tracked files) | Scripts read config next to themselves, so they stop with `Config file not found` |
+| Even with the configs copied, `INTERNAL_REPO` still points at the usual directory | Scripts `cd` there first, so they operate on that directory, not the worktree. With `--tag` the result is the same; without it the source is the usual directory's `HEAD` |
+| A branch can be checked out in only one worktree | Step 0's `git checkout <internal-branch>` fails with `already used by worktree` |
+| Tags, including `replica/<party>/*`, are shared across worktrees | Not a problem |
+| No upstream (`@{u}`) on the new branch | Not a problem: every command names `origin` explicitly |
+
+You do not need a worktree of your own: `stage-publish.sh` already applies the patch in a
+temporary worktree it creates (relocatable with `STAGE_TMPDIR`). If you must run from another
+worktree, copy both config files into it, set `INTERNAL_REPO` to that worktree's path, use
+`--tag`, skip Step 0's checkout, and keep the two config copies in sync.
+
 **Before Phase 1 — `stage-publish.sh`**
 
 ```bash

@@ -729,6 +729,17 @@ these instructions. Alternatively, run Phase 1 via the Linux CI (case-sensitive)
   The \`.gitignore-fragment\` ignores \`/party-packages/\` and \`/sync-patches/\` at the
   root, so these outputs stay out of commits. If your \`.gitignore\` predates this,
   re-run the installer (it appends missing patterns) or add the two lines yourself.
+
+### Q5. Can I run section [B] from a separate \`git worktree\` (e.g. \`wt-a\`)?
+
+Run it from your usual working directory instead. A new worktree contains only tracked
+files, so the gitignored \`replica-sync/config/sync.conf\` and \`config/party/*.conf\` are
+missing and the scripts stop with \`Config file not found\`. Even with them copied,
+\`INTERNAL_REPO\` points at the usual directory and the scripts \`cd\` there first, so the
+worktree is not what they operate on. Step 0's \`git checkout <branch>\` also fails if that
+branch is checked out in the other worktree. An unset upstream is not a problem (all
+commands name \`origin\`), and tags are shared across worktrees. \`stage-publish.sh\`
+already applies the patch in its own temporary worktree, so you do not need one.
 SETUPEOF
 
 log "Built SETUP.md"
