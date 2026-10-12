@@ -1506,6 +1506,23 @@ To apply from a patch file with path filtering:
 Notify the external PR of the acceptance decision via comment.
 Two output modes are available depending on the delivery method.
 
+**Target check.** The target repository comes from `--party` (`REPLICA_GH_REPO` in
+`config/party/<party>.conf`) and the PR number from the meta. PR numbers are per
+repository, so the wrong `--party` would comment on — and for `rejected`, **close** — an
+unrelated PR with the same number in another party's replica. Before doing anything, the
+script compares the repository and number in the meta's `pr_url` (recorded by
+`pr-to-internal.yml`) with `REPLICA_GH_REPO` and `pr_number`, and stops if they differ
+(owner/repo is compared case-insensitively). It also stops if `REPLICA_GH_REPO` is empty or
+the meta has no `pr_url`. Nothing is posted or generated on failure, in either mode.
+
+On a mismatch the error names the correct repository, e.g.:
+
+```
+[ err ] Party/PR mismatch: --party beta targets your-org/replica-beta,
+   but the PR in the meta is https://github.com/your-org/replica-acme/pull/5.
+   Use the --party whose REPLICA_GH_REPO is your-org/replica-acme.
+```
+
 #### push mode (default)
 
 Run `gh pr comment` directly from internal. Requires access to `REPLICA_GH_REPO`.
@@ -1538,13 +1555,13 @@ Generated files:
 
 | File | Contents |
 |---|---|
-| `notify-TIMESTAMP-meta.json` | PR number, comment body, close flag, repository name |
-| `notify-TIMESTAMP.sh` | Standalone script for the 3rd party to run |
+| `notify-<party>-pr<N>-TIMESTAMP-meta.json` | Party, PR number, PR URL, repository name, comment body, close flag |
+| `notify-<party>-pr<N>-TIMESTAMP.sh` | Standalone script for the 3rd party to run. Prints the target repo/PR before posting |
 
 Command for the 3rd party to run (requires `gh` CLI and `jq`):
 
 ```bash
-./notify-TIMESTAMP.sh
+./notify-<party>-pr<N>-TIMESTAMP.sh
 ```
 
 The output directory can be configured via `NOTIFY_OUTPUT_DIR` in `sync.conf` (default: `./sync-patches`).

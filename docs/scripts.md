@@ -407,9 +407,18 @@ notification package for the 3rd party to run themselves (`patch`).
 ./scripts/notify-external-pr.sh --party <name> --meta <file> --status <decision> [--reason <text>] [--output push|patch]
 ```
 
+**Target check.** The target repository comes from `--party` (`REPLICA_GH_REPO` in
+`config/party/<party>.conf`) and the PR number from the meta. PR numbers are per
+repository, so the wrong `--party` would comment on — and for `rejected`, **close** — an
+unrelated PR with the same number in another party's replica. Before doing anything, the
+script compares the repository and number in the meta's `pr_url` (recorded by
+`pr-to-internal.yml`) with `REPLICA_GH_REPO` and `pr_number`, and stops if they differ
+(owner/repo is compared case-insensitively). It also stops if `REPLICA_GH_REPO` is empty or
+the meta has no `pr_url`. Nothing is posted or generated on failure, in either mode.
+
 | Option | Required | Description |
 |---|:---:|---|
-| `--party <name>` | Yes | Party name (loads `config/party/<name>.conf`) |
+| `--party <name>` | Yes | Party name. Loads `config/party/<name>.conf`; its `REPLICA_GH_REPO` is the repository notified. Must match the repository in the meta's `pr_url` |
 | `--meta <file>` | Yes | Path to the `pr-meta.json` artifact |
 | `--status <decision>` | Yes | `accepted`, `partial`, or `rejected` |
 | `--reason <text>` | No | Reason for rejection (shown in the comment) |

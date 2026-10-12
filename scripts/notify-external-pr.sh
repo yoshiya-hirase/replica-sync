@@ -31,6 +31,7 @@ CONFIG_FILE="${SCRIPT_DIR}/../config/sync.conf"
 # shellcheck source=../config/sync.conf.example
 source "$CONFIG_FILE"
 
+log() { echo -e "\033[1;34m[notify]\033[0m $*"; }
 ok()  { echo -e "\033[1;32m[  ok ]\033[0m $*"; }
 die() { echo -e "\033[1;31m[ err ]\033[0m $*" >&2; exit 1; }
 
@@ -76,6 +77,31 @@ PARTY_CONFIG="${SCRIPT_DIR}/../config/party/${PARTY}.conf"
 source "$PARTY_CONFIG"
 
 PR_NUMBER=$(jq -r '.pr_number' "$META_FILE")
+PR_URL=$(jq -r '.pr_url // empty' "$META_FILE")
+
+# ── Guard: the notification must go to the party the PR came from ─────
+# The target repo comes from --party (REPLICA_GH_REPO) and the PR number from the
+# meta. PR numbers are per repository, so a wrong --party would comment on — and,
+# for "rejected", close — an unrelated PR with the same number in another party's
+# replica. Cross-check against the PR URL recorded by pr-to-internal.yml.
+lower() { printf '%s' "$1" | tr '[:upper:]' '[:lower:]'; }
+[[ -n "${REPLICA_GH_REPO:-}" ]] \
+  || die "REPLICA_GH_REPO is empty in $PARTY_CONFIG"
+[[ -n "$PR_URL" ]] \
+  || die "pr_url is missing from $META_FILE; cannot verify the target PR"
+URL_PATH="${PR_URL#*://}"   # host/owner/repo/pull/N
+URL_PATH="${URL_PATH#*/}"   # owner/repo/pull/N
+[[ "$URL_PATH" =~ ^([^/]+/[^/]+)/pull/([0-9]+)/?$ ]] \
+  || die "Unrecognized pr_url in meta: $PR_URL"
+URL_REPO="${BASH_REMATCH[1]}"
+URL_NUMBER="${BASH_REMATCH[2]}"
+[[ "$(lower "$URL_REPO")" == "$(lower "$REPLICA_GH_REPO")" ]] \
+  || die "Party/PR mismatch: --party ${PARTY} targets ${REPLICA_GH_REPO},\n" \
+         "  but the PR in the meta is ${PR_URL}.\n" \
+         "  Use the --party whose REPLICA_GH_REPO is ${URL_REPO}."
+[[ "$URL_NUMBER" == "$PR_NUMBER" ]] \
+  || die "Meta is inconsistent: pr_number=${PR_NUMBER} but pr_url points to #${URL_NUMBER}"
+log "Target   : ${REPLICA_GH_REPO}#${PR_NUMBER} (party: ${PARTY})"
 
 # ── Build comment body ────────────────────────────────────────
 case "$STATUS" in
@@ -103,13 +129,16 @@ if [[ "$OUTPUT_MODE" == "patch" ]]; then
   TIMESTAMP=$(date +%Y%m%d-%H%M%S)
   mkdir -p "$NOTIFY_OUTPUT_DIR"
 
-  DEST_META="${NOTIFY_OUTPUT_DIR}/notify-${TIMESTAMP}-meta.json"
-  DEST_SCRIPT="${NOTIFY_OUTPUT_DIR}/notify-${TIMESTAMP}.sh"
+  NOTIFY_NAME="notify-${PARTY}-pr${PR_NUMBER}-${TIMESTAMP}"
+  DEST_META="${NOTIFY_OUTPUT_DIR}/${NOTIFY_NAME}-meta.json"
+  DEST_SCRIPT="${NOTIFY_OUTPUT_DIR}/${NOTIFY_NAME}.sh"
 
   # Write meta
   cat > "$DEST_META" << EOF
 {
+  "party":       "${PARTY}",
   "pr_number":   ${PR_NUMBER},
+  "pr_url":      "${PR_URL}",
   "repo":        "${REPLICA_GH_REPO}",
   "status":      "${STATUS}",
   "close_pr":    ${CLOSE_PR},
@@ -124,14 +153,14 @@ EOF
 #
 # Usage:
 #   # Run from any directory on the 3rd party's machine
-#   ./notify-TIMESTAMP.sh
+#   ./NOTIFY_NAME.sh
 #
 # Prerequisites: gh CLI (authenticated), jq
 #
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-META_FILE="${SCRIPT_DIR}/notify-TIMESTAMP-meta.json"
+META_FILE="${SCRIPT_DIR}/NOTIFY_NAME-meta.json"
 
 [[ -f "$META_FILE" ]] || { echo "Meta file not found: $META_FILE"; exit 1; }
 command -v jq >/dev/null 2>&1 || { echo "jq is not installed"; exit 1; }
@@ -142,6 +171,8 @@ REPO=$(jq     -r '.repo'       "$META_FILE")
 COMMENT=$(jq  -r '.comment'    "$META_FILE")
 CLOSE_PR=$(jq -r '.close_pr'   "$META_FILE")
 
+echo "Target: ${REPO} PR #${PR_NUMBER} ($(jq -r '.pr_url' "$META_FILE"))"
+
 gh pr comment "$PR_NUMBER" --repo "$REPO" --body "$COMMENT"
 echo "Comment posted on PR #${PR_NUMBER}"
 
@@ -151,8 +182,9 @@ if [[ "$CLOSE_PR" == "true" ]]; then
 fi
 NOTIFY_TEMPLATE
 
-  # Replace TIMESTAMP placeholder in script
-  sed -i '' "s/notify-TIMESTAMP-meta/notify-${TIMESTAMP}-meta/g" "$DEST_SCRIPT"
+  # Fill in the file-name placeholder (portable: no BSD/GNU sed -i difference)
+  sed "s/NOTIFY_NAME/${NOTIFY_NAME}/g" "$DEST_SCRIPT" > "${DEST_SCRIPT}.tmp"
+  mv "${DEST_SCRIPT}.tmp" "$DEST_SCRIPT"
   chmod +x "$DEST_SCRIPT"
 
   ok "Notification package generated:"

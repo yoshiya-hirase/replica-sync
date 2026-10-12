@@ -584,6 +584,11 @@ git cherry-pick external/acme-pr-N
   --output patch
 \`\`\`
 
+Use the \`--party\` the PR came from. The script checks that the repository in the
+meta's \`pr_url\` matches that party's \`REPLICA_GH_REPO\` and stops otherwise, so a wrong
+\`--party\` cannot comment on (or, for \`rejected\`, close) another party's PR that has the
+same number. Patch mode writes \`notify-<party>-pr<N>-<TIMESTAMP>.sh\` and its meta.
+
 ---
 $(if [[ "$WITH_CI_WORKFLOW" == "true" ]]; then
 cat << 'CIGUIDE'

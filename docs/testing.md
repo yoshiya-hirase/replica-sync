@@ -405,8 +405,8 @@ git checkout main
   --output patch
 ```
 
-`notify-TIMESTAMP.sh` and `notify-TIMESTAMP-meta.json` are generated in `sync-patches/`.
-Send these 2 files to galaxy and have them run `./notify-TIMESTAMP.sh`.
+`notify-galaxy-pr<N>-TIMESTAMP.sh` and `notify-galaxy-pr<N>-TIMESTAMP-meta.json` are generated in `sync-patches/`.
+Send these 2 files to galaxy and have them run `./notify-galaxy-pr<N>-TIMESTAMP.sh`.
 
 **Verification points:**
 - push mode: comment is posted directly on the external PR
