@@ -1790,12 +1790,35 @@ jobs:
 
 ### Adding a 3rd Party (First Delivery)
 
-- [ ] Create `config/party/<party>.conf`
+- [ ] Create `config/party/<party>.conf` and set `REPLICA_GH_REPO` correctly (used for the
+      `ONBOARDING.md` clone URL and by `notify-external-pr.sh` to verify the target PR)
 - [ ] Create an empty replica repo on github.com (for push mode)
 - [ ] Generate and send onboarding package to 3rd party (see below)
+- [ ] Confirm `git tag -l 'replica/<party>/*'` prints nothing (otherwise it is not treated as a first delivery)
 - [ ] Run `deliver-to-replica.sh --party <name> "initial: YYYY-QN"`
 - [ ] Configure Branch Protection or Ruleset on replica `main` (see below)
 - [ ] Send invitation to 3rd party
+
+#### What a first delivery contains
+
+A new party can be added at any point in `publish`'s life; the normal procedure applies.
+With no `replica/<party>/last-sync` tag, the delivery range is from the **root commit of
+`publish`** (the empty base) to its current HEAD. Consequences:
+
+- Only the **final content** is delivered. Files that were published earlier and later
+  removed from `publish` (e.g. IDE settings or internal workflows cleaned up after being
+  excluded) cancel out and never reach the new party. Cleaning `publish` *before* adding a
+  party therefore keeps those files out entirely.
+- A first delivery only adds files, each under its final path, so the case-only-rename
+  failure (see [Filesystem Case-Sensitivity](#filesystem-case-sensitivity-operational-assumption))
+  does not occur.
+- The patch-mode `apply.sh` first runs `git rm -rf .`, so hand over the replica empty (or with
+  only a GitHub-generated README).
+- `pr-to-internal.yml` arrives twice: as a bootstrap file in the first delivery
+  (`config/replica-bootstrap/`) and via the onboarding package's `install.sh`. The content is
+  the same; whichever runs second is a no-op.
+- In patch mode, `replica/<party>/init-<TS>`, `last-sync`, and `sync-<TS>` are created when the
+  package is generated.
 
 #### Replica `main` Branch Protection
 

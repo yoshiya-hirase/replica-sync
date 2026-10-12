@@ -761,6 +761,16 @@ file at that path in the latest fetched \`publish\` commit; a wrong path or case
   that is already published.
 - Do not push a deletion onto the \`sync/\` branch instead: the next stage re-adds the file.
 - If the file holds a secret, it stays in the replicas' history: rotate the secret.
+
+### Q7. Can I add a new party after \`publish\` has been updated and cleaned many times?
+
+Yes, with the normal procedure (party conf → onboarding package → \`deliver-to-replica.sh\`).
+With no \`replica/<party>/last-sync\` tag, the first delivery spans from the empty root of
+\`publish\` to its HEAD, so only the final content is sent: files that were published and later
+removed never reach the new party, and case-only renames cannot collide. Before delivering,
+set \`REPLICA_GH_REPO\` in \`config/party/<party>.conf\` and confirm
+\`git tag -l 'replica/<party>/*'\` prints nothing. Hand over the replica empty: the first-delivery
+\`apply.sh\` starts with \`git rm -rf .\`.
 SETUPEOF
 
 log "Built SETUP.md"
