@@ -936,6 +936,12 @@ based on — for example, to stop syncing from `dev` and instead sync a **code-f
 snapshot** that you keep on its own branch/tag for the record — and delivery continues
 normally.
 
+This holds at any point in the replica's life, not only before the first sync: after
+several milestone deliveries you can switch `INTERNAL_BRANCH` (or the branch your `--tag`
+points into) and keep syncing, provided the new source satisfies the correctness condition
+below. `publish` and the party tags do not record which internal branch a sync came from,
+so nothing has to be reset.
+
 **What each variable actually controls**
 
 | | Role in `stage-publish.sh` | Effect of the source branch |
@@ -984,6 +990,14 @@ branch locally beforehand. Passing `--tag` avoids both requirements.
 
 Note: `deliver-to-replica.sh` never reads `INTERNAL_BRANCH` — it works from `origin/publish`
 and the party tags — so Phase 2 is unaffected by any source-branch change.
+
+**Branch settings that are *not* meant to change mid-operation**
+
+| Setting | Where | Why it is different |
+|---|---|---|
+| `INTERNAL_BRANCH` | `sync.conf` | Changeable at any time (this section). |
+| `PUBLISH_BRANCH` | hard-coded `publish` in `stage-publish.sh` / `deliver-to-replica.sh` | Not configurable; `sync.conf` cannot override it. |
+| `REPLICA_BRANCH` | `config/party/<party>.conf` | Used only by push mode. The patch-mode `apply.sh` template hard-codes `main`. Changing the replica-side branch is a different operation — treat it like a fresh start for that party (e.g. `--rebuild`). |
 
 #### Verifying the stage PR is mergeable (before merging into `publish`)
 
