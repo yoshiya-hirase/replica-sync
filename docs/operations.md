@@ -1055,6 +1055,29 @@ Deliver the content of the `publish` branch to the external replica.
 The source is the diff from `replica/<party>/last-sync` to `publish` HEAD.
 Specify the delivery method with `--output` and the application method with `--mode`.
 
+**Where the snapshot comes from.** The script `cd`s into `INTERNAL_REPO`, runs
+`git fetch "$INTERNAL_REMOTE"`, and reads the **remote-tracking ref `origin/publish`**.
+It never reads your local `publish` branch, your working tree, or `INTERNAL_BRANCH`.
+
+| Bound | Taken from |
+|---|---|
+| Upper (the snapshot delivered) | `origin/publish` HEAD, current as of the script's own fetch |
+| Lower (subsequent delivery) | local tag `replica/<party>/last-sync` |
+| Lower (first delivery or `--rebuild`) | root commit of `origin/publish` |
+
+The patch is `git diff --binary --full-index <lower>..<upper>`. In patch mode that patch is
+zipped as-is; nothing is checked out. In push mode a first delivery extracts the snapshot
+with `git -C "$INTERNAL_REPO" archive <upper>` instead, and later deliveries apply the patch
+to `REPLICA_REPO` with `git apply --3way`.
+
+Consequences:
+
+- A stage PR's content is not delivered until it is **merged into `publish`** on the remote.
+- The upper bound is the same from any clone, but the lower-bound tag is **local-only** (never
+  pushed). Run in the clone that holds `replica/<party>/last-sync`; elsewhere the run is treated
+  as a first delivery and re-sends the full snapshot.
+- No `git pull` is needed beforehand; the script fetches `origin/publish` itself.
+
 | `--output` | `--mode` | Behavior | last-sync update |
 |---|---|---|---|
 | `patch` **(default)** | `pr` (default) | Output patch set and apply.sh. 3rd party creates PR | Automatic at patch generation time |
