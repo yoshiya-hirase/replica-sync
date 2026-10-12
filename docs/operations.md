@@ -924,6 +924,50 @@ Internal flow:
    (PR body includes commit range, tag name if used, and list of internal commits)
 ```
 
+**Where the source comes from.** The script first `cd`s into `INTERNAL_REPO` (not the
+directory you launched it from) and runs `git fetch`. The lower bound is always the
+**remote-tracking ref** `origin/publish`. The upper bound — the source of the sync —
+depends on `--tag`:
+
+| | Upper bound (source) | Affected by local state? |
+|---|---|---|
+| `--tag <tag>` | the commit the tag points to | No. `INTERNAL_BRANCH` is unused and no fast-forward runs. |
+| no `--tag` | `HEAD` of the branch currently checked out in `INTERNAL_REPO`, **after** it is fast-forwarded to `origin/<INTERNAL_BRANCH>` | Yes: which branch is checked out, and whether it has unpushed commits. |
+
+Without `--tag` the order is:
+
+```
+cd "$INTERNAL_REPO"
+git fetch origin
+git merge --ff-only origin/<INTERNAL_BRANCH>   # fast-forwards the CURRENT branch
+INTERNAL_HEAD=$(git rev-parse HEAD)             # this becomes the source
+```
+
+Pitfalls of the no-`--tag` path:
+
+- The script does **not** check out `INTERNAL_BRANCH`. If another branch is checked out,
+  `origin/<INTERNAL_BRANCH>` is fast-forwarded into *that* branch (if possible) and its
+  `HEAD` becomes the source; if the branches have diverged, the script stops with `die`.
+- Unpushed local commits make the fast-forward impossible, so the script stops with `die`.
+- To use it safely: `git checkout <INTERNAL_BRANCH>` in `INTERNAL_REPO` with no local
+  commits first. `--tag` avoids all of this, which is why it is recommended.
+
+**Stage vs deliver at a glance.** `publish` is the relay point between internal development
+and the replicas:
+
+```
+internal tag (or checked-out HEAD)
+   │  stage-publish.sh: diff origin/publish..<tag>  → PR sync/<TS> → publish
+   ▼
+publish (advances when the PR is merged)
+   │  deliver-to-replica.sh: diff replica/<party>/last-sync..origin/publish  → package per party
+   ▼
+replica (updated by apply.sh); last-sync advances when the package is generated
+```
+
+`last-sync` is a tag on a past `publish` commit, so a delivery diff spans two points of the
+`publish` branch itself. Both scripts read `origin/publish`, never the local `publish` branch.
+
 Review and approve the PR, then merge to `publish`.
 **This phase does not update the `replica/<party>/last-sync` tag.**
 
