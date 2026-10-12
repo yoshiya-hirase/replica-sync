@@ -740,6 +740,27 @@ worktree is not what they operate on. Step 0's \`git checkout <branch>\` also fa
 branch is checked out in the other worktree. An unset upstream is not a problem (all
 commands name \`origin\`), and tags are shared across worktrees. \`stage-publish.sh\`
 already applies the patch in its own temporary worktree, so you do not need one.
+
+### Q6. I found a file that should not be published while reviewing the stage PR. What now?
+
+Do not merge. First check whether it is already in \`publish\`:
+
+\`\`\`bash
+git fetch origin
+git cat-file -e origin/publish:<path> 2>/dev/null && echo "already in publish" || echo "new in this PR"
+\`\`\`
+
+(\`git cat-file -e\` only tests existence via its exit code; \`origin/publish:<path>\` means the
+file at that path in the latest fetched \`publish\` commit; a wrong path or case also reads as
+"new".)
+
+- **New in this PR:** \`gh pr close <PR> --delete-branch\`, add the path to \`EXCLUDE_PATHS\`,
+  and re-run \`stage-publish.sh\` with the same tag.
+- **Already in publish:** do the same, merge the new PR, then remove the file from
+  \`publish\` with a cleanup PR, then deliver. \`EXCLUDE_PATHS\` alone never removes a file
+  that is already published.
+- Do not push a deletion onto the \`sync/\` branch instead: the next stage re-adds the file.
+- If the file holds a secret, it stays in the replicas' history: rotate the secret.
 SETUPEOF
 
 log "Built SETUP.md"

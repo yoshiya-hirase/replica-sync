@@ -1113,6 +1113,52 @@ git merge-tree --write-tree --messages origin/publish origin/sync/<TIMESTAMP>; e
 > is safe on a case-insensitive filesystem — as is the GitHub-side check above. See
 > [Filesystem Case-Sensitivity](#filesystem-case-sensitivity-operational-assumption).
 
+#### Found a file that should not be published while reviewing the stage PR
+
+Do not merge yet. What to do depends on whether the file is **already in `publish`** (and
+so already delivered to replicas) or **new in this PR**. Check:
+
+```bash
+git fetch origin
+git cat-file -e origin/publish:<path> 2>/dev/null && echo "already in publish" || echo "new in this PR"
+```
+
+| Part | Meaning |
+|---|---|
+| `git cat-file -e` | Tests whether an object exists. Prints nothing; the exit code is 0 if it exists |
+| `origin/publish:<path>` | "The file at `<path>` in the latest `origin/publish` commit" (`<ref>:<path>` reads a commit's content, not the working tree). `<path>` is relative to the repo root, without a leading `./` or `/` |
+| `2>/dev/null` | Hides git's error message when the file does not exist |
+| `&& …` / `\|\| …` | Prints the first message on success, the second on failure |
+
+`origin/publish` is as of your last `git fetch`, hence the fetch first. A misspelled path or
+wrong case also reports "new in this PR"; if the result is surprising, find the real path
+with `git ls-tree -r --name-only origin/publish | grep -i '<part of name>'`.
+
+**A. New in this PR** — add it to `EXCLUDE_PATHS` and re-stage:
+
+```bash
+gh pr close <PR> --delete-branch                 # close the PR and delete its sync/ branch
+# add the path to EXCLUDE_PATHS in replica-sync/config/sync.conf
+#   file: "path/to/file"   directory: "dir/"   pattern: "**/name"
+./replica-sync/scripts/stage-publish.sh --tag <same-tag> "<message>"   # the tag can be reused
+gh pr diff <new-PR> --name-only | grep '<name>' || echo "not included"
+```
+
+Do not fix it by pushing a deletion commit onto the `sync/` branch: the next stage re-adds
+the file, and that commit is not authored by the Bot.
+
+**B. Already in publish** — `EXCLUDE_PATHS` only keeps *future* changes out of the diff; it
+does not remove what is already in `publish`. In order:
+
+1. Add the path to `EXCLUDE_PATHS` and re-stage as in A; review and merge the new PR.
+2. Remove the file from `publish` with a cleanup PR — see
+   [Removing a file from the publish branch](#removing-a-file-from-the-publish-branch). This
+   step runs no replica-sync scripts, so doing it in a separate worktree is fine.
+3. Deliver; the deletion reaches the replicas.
+
+If the file contains a secret (key, password, token), removing it from `publish` does not
+remove it from the replicas' git history. **Rotate the secret.**
+
 ### B-3. Phase 2: Deliver to External Replica (`deliver-to-replica.sh`)
 
 Deliver the content of the `publish` branch to the external replica.
