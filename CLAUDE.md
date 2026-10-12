@@ -78,7 +78,7 @@ pr-to-internal.yml
   └── upload-artifact               # Save patch + meta.json
 
 [Run manually internally]
-apply-external-pr.sh --patch --meta
+apply-external-pr.sh --party --patch --meta [--base]
   └── git apply --3way              # Apply to internal branch
   └── commit (author=Bot)
   └── gh pr create → GHE           # Auto-create internal PR

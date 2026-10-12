@@ -178,8 +178,8 @@ gh run download <run-id> --repo your-org/replica-acme --dir ./artifacts/
   --meta  artifacts/pr-meta.json
 # → opens internal PR on GHE for review
 
-# 3a. Accept all — cherry-pick after internal review
-git checkout main && git cherry-pick external/acme-pr-N
+# 3a. Accept all — cherry-pick after internal review (onto the PR's base branch)
+git checkout <base> && git cherry-pick external/acme-pr-N
 
 # 3b. Accept partial — cherry-pick specific paths only
 ./replica-sync/scripts/cherry-pick-partial.sh \
@@ -1434,39 +1434,56 @@ If there are multiple pushes to the PR, a comment is added each time.
 
 ```bash
 ./apply-external-pr.sh --party acme --patch pr.patch --meta pr-meta.json
+
+# Branch from / target a specific internal branch
+./apply-external-pr.sh --party acme --base dev --patch pr.patch --meta pr-meta.json
 ```
 
-`--party` is optional (omitting it uses `3rdparty` as the branch name prefix).
+`--party` is **required** and must match `config/party/<party>.conf`. It goes into the
+working branch name (`external/<party>-pr-{N}`), the commit message, and the internal PR
+title (`[External:<party>] ...`). It is required because each replica numbers its PRs
+independently: with a shared name, two parties' PR #5 would map to the same branch and the
+second run would reset and force-push over the first.
+
+**Base branch.** The working branch is created from, and the internal PR targets, the
+base branch resolved in this order: `--base <branch>` → `INTERNAL_BRANCH` in `sync.conf` →
+`main`. The script logs which one it used (`Base : dev (from INTERNAL_BRANCH)`) and stops
+if the branch does not exist on `INTERNAL_REMOTE`. Note that `sync.conf.example` sets
+`INTERNAL_BRANCH`, so in practice the default is that value, not `main`.
 
 Internal processing flow:
 
 ```
 1. Read PR info from meta.json
-2. Update internal repo (git fetch + merge --ff-only)
-3. Create external/<party>-pr-{N} branch
+2. Resolve the base branch (--base → INTERNAL_BRANCH → main); verify it exists on the remote
+   Update it (git fetch + checkout <base> + merge --ff-only)
+3. Create external/<party>-pr-{N} branch from <base>
    (On re-submission of same PR: update existing branch with --force-with-lease)
 4. Apply patch with git apply --3way
    On failure: display conflict locations and exit (prompt for manual resolution)
 5. Commit with author=Bot
    Record original PR URL and external author in commit message
 6. Push to GHE (--force-with-lease)
-7. Create internal PR (label: external-contribution)
-   Skip creation if PR already exists (already updated via push)
+7. Create internal PR targeting <base> (label: external-contribution)
+   Skip creation if PR already exists (already updated via push);
+   warn if the existing PR targets a different base
 ```
 
 ### C-3. Partial Incorporation of Changes (`cherry-pick-partial.sh`)
 
+Accept onto the same base branch the internal PR targets (`<base>` below; see C-2).
+
 To accept the entire external PR:
 
 ```bash
-git checkout main
+git checkout <base>
 git cherry-pick external/acme-pr-123
 ```
 
 To accept changes only for specific paths:
 
 ```bash
-git checkout main
+git checkout <base>
 git checkout external/acme-pr-123 -- \
   services/api/src/Foo.kt \
   services/api/src/Bar.kt
@@ -1477,6 +1494,7 @@ To apply from a patch file with path filtering:
 
 ```bash
 ./cherry-pick-partial.sh \
+  --base  dev \
   --patch pr-123.patch \
   --meta  pr-123-meta.json \
   --paths "services/api/" "services/common/" \

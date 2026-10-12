@@ -15,6 +15,9 @@
 #     --paths "services/api/" "services/common/" \
 #     --message "Accept API changes only"
 #
+#   # Apply onto a specific internal branch (default: INTERNAL_BRANCH, else main)
+#   ./scripts/cherry-pick-partial.sh --base dev --patch ... --meta ... --paths ...
+#
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
@@ -33,12 +36,14 @@ PATCH_FILE=""
 META_FILE=""
 PATHS=()
 COMMIT_MSG=""
+BASE=""
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --patch)   PATCH_FILE="$(cd "$(dirname "$2")" && pwd)/$(basename "$2")"; shift 2 ;;
     --meta)    META_FILE="$(cd "$(dirname "$2")" && pwd)/$(basename "$2")";  shift 2 ;;
     --message) COMMIT_MSG="$2"; shift 2 ;;
+    --base)    BASE="$2"; shift 2 ;;
     --paths)
       shift
       while [[ $# -gt 0 && "$1" != --* ]]; do
@@ -60,15 +65,28 @@ PR_AUTHOR=$(jq -r '.pr_author' "$META_FILE")
 
 COMMIT_MSG="${COMMIT_MSG:-"external(partial): ${PR_TITLE}"}"
 
+# Same base resolution as apply-external-pr.sh so partial acceptance lands on
+# the branch the internal PR targets.
+if [[ -n "$BASE" ]]; then
+  BASE_SOURCE="--base"
+elif [[ -n "${INTERNAL_BRANCH:-}" ]]; then
+  BASE="$INTERNAL_BRANCH"; BASE_SOURCE="INTERNAL_BRANCH"
+else
+  BASE="main"; BASE_SOURCE="default"
+fi
+
 log "PR      : #${PR_NUMBER} ${PR_TITLE}"
 log "Paths   : ${PATHS[*]}"
 log "Message : $COMMIT_MSG"
+log "Base    : ${BASE} (from ${BASE_SOURCE})"
 
 # ── Update internal repo ──────────────────────────────────────
 cd "$INTERNAL_REPO"
 git fetch "$INTERNAL_REMOTE"
-git checkout main
-git merge --ff-only "${INTERNAL_REMOTE}/main"
+git rev-parse --verify "refs/remotes/${INTERNAL_REMOTE}/${BASE}" >/dev/null 2>&1 \
+  || die "Base branch '${BASE}' not found on ${INTERNAL_REMOTE} (from ${BASE_SOURCE})"
+git checkout "$BASE"
+git merge --ff-only "${INTERNAL_REMOTE}/${BASE}"
 
 # ── Apply only hunks matching the specified paths ─────────────
 INCLUDE_ARGS=()

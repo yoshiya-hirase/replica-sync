@@ -7,8 +7,11 @@
 # Usage:
 #   ./scripts/apply-external-pr.sh --party acme --patch pr.patch --meta pr-meta.json
 #
-#   # --party is optional; omit to use "3rdparty" as the branch prefix
-#   ./scripts/apply-external-pr.sh --patch pr.patch --meta pr-meta.json
+#   # Branch from and target a specific internal branch
+#   ./scripts/apply-external-pr.sh --party acme --base dev --patch pr.patch --meta pr-meta.json
+#
+# --party is required and must match config/party/<party>.conf.
+# Base branch: --base, else INTERNAL_BRANCH from sync.conf, else main.
 #
 set -euo pipefail
 
@@ -27,20 +30,37 @@ die() { echo -e "\033[1;31m[ err ]\033[0m $*" >&2; exit 1; }
 PATCH_FILE=""
 META_FILE=""
 PARTY=""
+BASE=""
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --patch)  PATCH_FILE="$(cd "$(dirname "$2")" && pwd)/$(basename "$2")"; shift 2 ;;
     --meta)   META_FILE="$(cd "$(dirname "$2")" && pwd)/$(basename "$2")";  shift 2 ;;
     --party)  PARTY="$2"; shift 2 ;;
-    *) die "Unknown option: $1\nUsage: $0 --party <name> --patch <file> --meta <file>" ;;
+    --base)   BASE="$2";  shift 2 ;;
+    *) die "Unknown option: $1\nUsage: $0 --party <name> [--base <branch>] --patch <file> --meta <file>" ;;
   esac
 done
 
 [[ -f "$PATCH_FILE" ]] || die "Patch file not found: $PATCH_FILE"
 [[ -f "$META_FILE"  ]] || die "Meta file not found: $META_FILE"
 
-PARTY_SLUG="${PARTY:-3rdparty}"
+# --party is required: it is the only thing that tells parties apart in the
+# working branch name, so a shared default would let two parties' PRs with the
+# same number reset and overwrite each other's branch.
+[[ -n "$PARTY" ]] || die "Specify the party with --party <name>"
+PARTY_CONFIG="${SCRIPT_DIR}/../config/party/${PARTY}.conf"
+[[ -f "$PARTY_CONFIG" ]] \
+  || die "Party config not found: $PARTY_CONFIG\n  Use the same name as config/party/<party>.conf"
+PARTY_SLUG="$PARTY"
+
+if [[ -n "$BASE" ]]; then
+  BASE_SOURCE="--base"
+elif [[ -n "${INTERNAL_BRANCH:-}" ]]; then
+  BASE="$INTERNAL_BRANCH"; BASE_SOURCE="INTERNAL_BRANCH"
+else
+  BASE="main"; BASE_SOURCE="default"
+fi
 
 # ── Load metadata ─────────────────────────────────────────────
 PR_NUMBER=$(jq -r '.pr_number' "$META_FILE")
@@ -55,20 +75,23 @@ log "PR       : #${PR_NUMBER} ${PR_TITLE}"
 log "Author   : ${PR_AUTHOR}"
 log "Party    : ${PARTY_SLUG}"
 log "Branch   : ${BRANCH}"
+log "Base     : ${BASE} (from ${BASE_SOURCE})"
 
 # ── Step 1: Update internal repo ─────────────────────────────
 cd "$INTERNAL_REPO"
 
 git fetch "$INTERNAL_REMOTE"
-git checkout main
-git merge --ff-only "${INTERNAL_REMOTE}/main"
+git rev-parse --verify "refs/remotes/${INTERNAL_REMOTE}/${BASE}" >/dev/null 2>&1 \
+  || die "Base branch '${BASE}' not found on ${INTERNAL_REMOTE} (from ${BASE_SOURCE})"
+git checkout "$BASE"
+git merge --ff-only "${INTERNAL_REMOTE}/${BASE}"
 
 # ── Step 2: Create or reset working branch ────────────────────
 if git rev-parse --verify "$BRANCH" >/dev/null 2>&1; then
   # Branch already exists — the external PR was updated and re-sent
   log "Resetting existing branch: $BRANCH"
   git checkout "$BRANCH"
-  git reset --hard "${INTERNAL_REMOTE}/main"
+  git reset --hard "${INTERNAL_REMOTE}/${BASE}"
 else
   git checkout -b "$BRANCH"
 fi
@@ -109,14 +132,19 @@ git push "$INTERNAL_REMOTE" "$BRANCH" --force-with-lease
 # ── Step 6: Open internal PR (skip if already exists) ────────
 log "Checking for existing internal PR..."
 
-PR_EXISTS=$(GH_HOST="$GH_HOST" gh pr list \
+EXISTING=$(GH_HOST="$GH_HOST" gh pr list \
   --repo "${GH_ORG}/${GH_REPO}" \
   --head "$BRANCH" \
-  --json number \
-  --jq '.[0].number // empty')
+  --json number,baseRefName \
+  --jq '.[0] | select(.) | "\(.number) \(.baseRefName)"')
+read -r PR_EXISTS PR_EXISTING_BASE <<< "${EXISTING:-}"
 
-if [[ -n "$PR_EXISTS" ]]; then
+if [[ -n "${PR_EXISTS:-}" ]]; then
   ok "Existing internal PR #${PR_EXISTS} updated (push complete)"
+  if [[ "$PR_EXISTING_BASE" != "$BASE" ]]; then
+    log "Warning: PR #${PR_EXISTS} targets '${PR_EXISTING_BASE}', but the branch was rebuilt on '${BASE}'."
+    log "  Change the PR base on GHE (or close it) so its diff matches."
+  fi
 else
   # Ensure the label exists
   GH_HOST="$GH_HOST" gh label list --repo "${GH_ORG}/${GH_REPO}" --json name --jq '.[].name' \
@@ -126,13 +154,15 @@ else
 
   INTERNAL_PR_URL=$(GH_HOST="$GH_HOST" gh pr create \
     --repo "${GH_ORG}/${GH_REPO}" \
-    --title "[External] ${PR_TITLE}" \
+    --title "[External:${PARTY_SLUG}] ${PR_TITLE}" \
     --body "## Forwarded external PR
 
 | Field          | Value |
 |----------------|-------|
+| Party          | ${PARTY_SLUG} |
 | External PR    | ${PR_URL} |
 | External author| ${PR_AUTHOR} |
+| Base branch    | ${BASE} |
 
 ## Original PR description
 
@@ -141,7 +171,7 @@ ${PR_BODY}
 ---
 > This PR was auto-generated to review an external contribution internally.
 > After approval and merge, close the external PR (do not merge it there)." \
-    --base main \
+    --base "$BASE" \
     --head "$BRANCH")
 
   GH_HOST="$GH_HOST" gh pr edit "$INTERNAL_PR_URL" \

@@ -543,14 +543,17 @@ gh run download <run-id> --repo your-org/replica-acme --dir ./artifacts/
 \`\`\`
 
 This creates \`external/acme-pr-N\` on GHE and opens an internal PR automatically.
+\`--party\` is required and must match \`config/party/<party>.conf\`. The branch is
+created from, and the PR targets, \`--base <branch>\` if given, else \`INTERNAL_BRANCH\`
+from \`sync.conf\`, else \`main\` (the script logs which one it used).
 
 ### 3. Review and decide
 
 Review the internal PR. Choose one:
 
 \`\`\`bash
-# Accept all changes
-git checkout main
+# Accept all changes (onto the base branch the internal PR targets)
+git checkout <base>
 git cherry-pick external/acme-pr-N
 
 # Accept specific paths only
@@ -619,7 +622,7 @@ fi)
 | Initialize publish branch | \`./replica-sync/scripts/init-replica.sh <start-tag>\` |
 | Stage sync to publish | \`./replica-sync/scripts/stage-publish.sh --tag milestone/<id> "sync: YYYY-QN"\` |
 | Deliver to 3rd party | \`./replica-sync/scripts/deliver-to-replica.sh --party <name> "sync: YYYY-QN"\` |
-| Apply external PR | \`./replica-sync/scripts/apply-external-pr.sh --party <name> --patch <file> --meta <file>\` |
+| Apply external PR | \`./replica-sync/scripts/apply-external-pr.sh --party <name> [--base <branch>] --patch <file> --meta <file>\` |
 | Partial acceptance | \`./replica-sync/scripts/cherry-pick-partial.sh --patch <file> --meta <file> --paths <paths>\` |
 | Notify external PR | \`./replica-sync/scripts/notify-external-pr.sh --party <name> --meta <file> --status <decision>\` |
 | Generate party onboarding | \`./replica-sync/scripts/generate-party-onboarding.sh --party <name> --repo <org/repo>\` |
