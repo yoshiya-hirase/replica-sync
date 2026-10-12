@@ -128,6 +128,11 @@ replica-sync/config/sync.conf
 replica-sync/config/party/*.conf
 
 # replica-sync: generated output directories
+# Default output dirs are relative to where the script runs: deliver-to-replica.sh
+# writes under INTERNAL_REPO, and generate-party-onboarding.sh / notify-external-pr.sh
+# write under the current directory (normally the monorepo root).
+/party-packages/
+/sync-patches/
 replica-sync/party-packages/
 replica-sync/upstream-packages/
 replica-sync/sync-patches/
@@ -431,7 +436,9 @@ git clone https://github.com/your-org/replica-acme.git /path/to/replica-acme
   --delivery-mode push   # or patch, or both
 \`\`\`
 
-Output: \`replica-sync/party-packages/acme-onboarding-TIMESTAMP.zip\`
+Output: \`./party-packages/acme-onboarding-TIMESTAMP.zip\` (relative to the current
+directory, i.e. the monorepo root; gitignored by the fragment). Use \`--output-dir\`
+to write elsewhere.
 
 Send this zip to the 3rd party. It contains:
 - \`ONBOARDING.md\` — their complete collaboration guide
@@ -697,6 +704,23 @@ export STAGE_TMPDIR=/Volumes/CaseSync/tmp
 \`export TMPDIR=...\` does **not** work: macOS \`mktemp -d\` ignores \`\$TMPDIR\`.
 Use \`STAGE_TMPDIR\`. The script detects this collision up front and aborts with
 these instructions. Alternatively, run Phase 1 via the Linux CI (case-sensitive).
+
+### Q4. What does \`generate-party-onboarding.sh\` change in the internal repo?
+
+**Nothing in git.** It runs no \`git\` commands: it reads
+\`config/party/<party>.conf\` and the \`pr-to-internal.yml\` template, writes
+\`<party>-onboarding-<TIMESTAMP>.zip\`, and deletes its work directory.
+\`--delivery-mode push|patch|both\` only changes the sync instructions in
+\`ONBOARDING.md\`. No branch, commit, remote, or tag changes.
+
+- **No \`replica/<party>/*\` tags are created.** \`init-*\` and \`last-sync\` appear on the
+  first \`deliver-to-replica.sh --party <name>\` run, which delivers the full snapshot
+  because no \`last-sync\` exists yet.
+- **The only change is one file in the working tree.** The default \`--output-dir\` is
+  \`./party-packages\`, relative to the current directory (normally the monorepo root).
+  The \`.gitignore-fragment\` ignores \`/party-packages/\` and \`/sync-patches/\` at the
+  root, so these outputs stay out of commits. If your \`.gitignore\` predates this,
+  re-run the installer (it appends missing patterns) or add the two lines yourself.
 SETUPEOF
 
 log "Built SETUP.md"
@@ -718,7 +742,7 @@ cat > "${WORK_DIR}/install.sh" << INSTALLEOF
 # What is overwritten vs preserved on upgrade:
 #   Overwritten : scripts, config templates, SETUP.md, .gitignore-fragment
 #   Preserved   : config/sync.conf, config/party/*.conf
-#   .gitignore  : fragment appended only if not already present
+#   .gitignore  : missing fragment patterns appended (existing ones kept)
 #
 set -euo pipefail
 
@@ -746,7 +770,7 @@ This script will NOT create a new directory.
 What is overwritten vs preserved on upgrade:
   Overwritten : scripts, config templates, SETUP.md, .gitignore-fragment
   Preserved   : config/sync.conf, config/party/*.conf
-  .gitignore  : fragment appended only if not already present
+  .gitignore  : missing fragment patterns appended (existing ones kept)
 
 Examples:
   bash install.sh --target /path/to/internal-monorepo
@@ -908,14 +932,25 @@ if [[ "\$HAS_CI_WORKFLOW" == "true" ]]; then
   log "Installed .github/workflows/sync-replica.yml"
 fi
 
-# .gitignore: append fragment only if not already present
+# .gitignore: append only the fragment patterns that are missing, so an upgrade
+# picks up entries added in newer versions without duplicating existing ones.
 GITIGNORE="\${TARGET}/.gitignore"
-if [[ -f "\$GITIGNORE" ]] && grep -qF "replica-sync/config/sync.conf" "\$GITIGNORE"; then
-  skip "Preserved .gitignore (fragment already present)"
+touch "\$GITIGNORE"
+MISSING=()
+while IFS= read -r line; do
+  [[ -z "\$line" || "\$line" == \#* ]] && continue
+  grep -qxF "\$line" "\$GITIGNORE" || MISSING+=("\$line")
+done < "\${RS_SRC}/.gitignore-fragment"
+if [[ \${#MISSING[@]} -eq 0 ]]; then
+  skip "Preserved .gitignore (all replica-sync patterns present)"
   SKIPPED=\$(( SKIPPED + 1 ))
 else
-  cat "\${RS_SRC}/.gitignore-fragment" >> "\$GITIGNORE"
-  log "Updated .gitignore"
+  {
+    echo ""
+    echo "# replica-sync (added by install.sh)"
+    printf '%s\n' "\${MISSING[@]}"
+  } >> "\$GITIGNORE"
+  log "Updated .gitignore (+\${#MISSING[@]} pattern(s))"
   UPDATED=\$(( UPDATED + 1 ))
 fi
 

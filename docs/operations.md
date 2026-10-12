@@ -617,11 +617,17 @@ internal-monorepo/                     ← monorepo root
 └── .gitignore                         ← appended with .gitignore-fragment
 ```
 
-Output directories created at runtime (gitignored, not committed):
+Output directories created at runtime (gitignored, not committed). Default output paths
+are relative, so they land at the monorepo root, not under `replica-sync/`:
 ```
-replica-sync/sync-patches/             ← patch mode delivery output (one zip per delivery: sync-TIMESTAMP-PARTY.zip)
-replica-sync/party-packages/           ← onboarding packages for 3rd parties
+<INTERNAL_REPO>/sync-patches/   ← deliver-to-replica.sh patch output (PATCH_OUTPUT_DIR, resolved after cd INTERNAL_REPO)
+./sync-patches/                 ← notify-external-pr.sh output (NOTIFY_OUTPUT_DIR, relative to the current directory)
+./party-packages/               ← generate-party-onboarding.sh output (--output-dir, relative to the current directory)
 ```
+`.gitignore-fragment` ignores both `/sync-patches/` and `/party-packages/` at the root
+(plus the older `replica-sync/...` paths). The installer appends any fragment patterns that
+are missing from `.gitignore`, so upgrading an existing install adds the root entries.
+Older installs predating this need a re-run of the installer, or add the two lines by hand.
 
 All scripts are self-contained under `replica-sync/` and are invoked from any
 working directory using the `replica-sync/scripts/` prefix
